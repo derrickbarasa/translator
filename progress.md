@@ -9,10 +9,11 @@ Working app on `main`. 74 tests pass, `ruff` is clean.
 **Verified in a real browser** (Chrome, real keystrokes and clicks, MyMemory engine): layout, async flow,
 progress bar, a successful translation render, Ctrl+Enter, copy (pasted back), speak (called with the right text
 and language), history persistence across a server restart, history restore / search / delete, recent-language
-buttons. Also verified end to end from the CLI.
+buttons, *Export for Anki* (real download, correct CSV), and file translation of a `.docx` (upload, translate,
+download; the bold span survived, slightly shifted). Also verified end to end from the CLI.
 
-**Not verified:** dictate (needs a microphone), the *Export for Anki* download and the file-translation card in
-a browser; a Google free translation (it rate-limits the dev machine's IP); and the Claude, DeepL and Google
+**Not verified:** dictate (needs a microphone); `.srt`, `.txt` and `.pdf` uploads in a browser (only unit-tested);
+a Google free translation (it rate-limits the dev machine's IP); and the Claude, DeepL and Google
 Cloud engines against their real APIs (mocked tests only; no keys available).
 
 ## History
