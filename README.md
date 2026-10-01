@@ -42,7 +42,7 @@ docker build -t translator . && docker run -p 5006:5006 --env-file .env translat
 - **Live translate** (debounced), character counter.
 - **Copy**, **speak** (browser speech synthesis) and **dictate** (browser speech recognition;
   Chrome/Edge work best).
-- **History** saved in `.translation_history.sqlite` (override with `TRANSLATOR_HISTORY`): search, click to reload, ✕ to delete. It is shared by everyone using the server; set `TRANSLATOR_HISTORY_DISABLED=1` to record nothing.
+- **History** saved in `.translation_history.sqlite` (override with `TRANSLATOR_HISTORY`): search, click to reload, ✕ to delete, *Export for Anki* downloads the listed entries as a CSV (front, back, language tag). It is shared by everyone using the server; set `TRANSLATOR_HISTORY_DISABLED=1` to record nothing.
 - **File translation:** `.txt`, `.srt` (timestamps preserved) and `.docx`.
 - **Persistent cache** in `.translation_cache.sqlite` (override with `TRANSLATOR_CACHE`).
 - Responsive UI: translation runs off the UI thread with a progress bar; settings and history live in a

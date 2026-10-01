@@ -1,5 +1,7 @@
 """Chunking, persistent cache, and the translate pipeline (UI-independent)."""
+import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -228,6 +230,19 @@ def translate_text(text, source, target, backend, cache=None, on_chunk=None):
         return "".join(one(c) for c in chunks)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return "".join(pool.map(one, chunks))  # map re-raises the first failure, in chunk order
+
+
+def anki_csv(entries):
+    """Anki-importable CSV (front, back, tag) from history entries.
+
+    Anki detects the comma delimiter and handles quoted multi-line fields. History keeps only the
+    first target's translation, so the tag is that target's language code.
+    """
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    for entry in entries:
+        writer.writerow([entry["text"], entry["out"], entry["targets"][0] if entry["targets"] else ""])
+    return buf.getvalue()
 
 
 def annotate_cached(backend, original, translated, target, cache=None):

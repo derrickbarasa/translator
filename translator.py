@@ -21,7 +21,15 @@ except ImportError:
     pass
 
 from backends import BACKENDS, TONES, EngineError, RateLimited, UnsupportedLanguage, get_backend
-from core import annotate_cached, chunk_text, default_cache, default_history, detect_language, translate_text
+from core import (
+    anki_csv,
+    annotate_cached,
+    chunk_text,
+    default_cache,
+    default_history,
+    detect_language,
+    translate_text,
+)
 from files import SUPPORTED, translate_file
 
 FALLBACK_LANGUAGES = {"english": "en", "japanese": "ja", "french": "fr", "spanish": "es", "german": "de"}
@@ -341,6 +349,15 @@ def build_app():
 
     history_search.param.watch(refresh_history, "value_input")
 
+    def export_anki():
+        entries = history.list(history_search.value_input, 500)  # honours the current search filter
+        return io.BytesIO(anki_csv(entries).encode("utf-8"))
+
+    anki_btn = pn.widgets.FileDownload(
+        callback=export_anki, filename="anki_cards.csv", label="Export for Anki", color="light", width=150,
+        description="Download the listed history as a CSV to import into Anki (front, back, language tag)",
+    )
+
     def clear_history(event):
         history.clear()
         refresh_history()
@@ -451,7 +468,7 @@ def build_app():
             pn.pane.Markdown("**History**"),
             history_search,
             history_box,
-            clear_history_btn,
+            pn.Row(clear_history_btn, anki_btn),
             pn.layout.Divider(),
             cache_info,
             clear_cache_btn,

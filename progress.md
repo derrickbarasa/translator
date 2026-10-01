@@ -4,7 +4,7 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 57 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
+Working app on `main`. 58 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
 bar, rate-limit message. **Not verified:** the Ctrl+Enter key listener in a real browser (the Python side is tested); a successful translation render (Google rate-limited the dev
 machine's IP) and the Claude / DeepL / Google Cloud engines against their real APIs (mocked tests only).
 
@@ -33,7 +33,7 @@ lossless round-trip. SQLite cache that survives restarts (LRU cap, clear button 
 **UI** (`translator.py`): sidebar settings and history; side-by-side input and output that wraps on narrow
 screens; dark-mode toggle; non-blocking translation with progress bar; multiple targets as tabs; swap;
 detected language; live translate (debounced, re-runs if text changed mid-flight); Ctrl/Cmd+Enter to translate; recent target languages (from history) as one-click buttons; copy, speak, dictate
-(browser APIs); persistent history (SQLite, search, per-entry delete, shared across sessions, opt-out via `TRANSLATOR_HISTORY_DISABLED`); file translation card.
+(browser APIs); persistent history (SQLite, search, per-entry delete, Anki CSV export, shared across sessions, opt-out via `TRANSLATOR_HISTORY_DISABLED`); file translation card.
 
 **CLI:** `python translator.py "text" --to ja [--from xx] [--engine ...]`, `--demo`, stdin supported.
 
@@ -41,6 +41,8 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Known limitations
 
+- Anki export covers the first target of each history entry only (history stores one output). The download button is
+  untested in a browser.
 - Google's free endpoint is unofficial and currently rejects requests from the dev machine; the app shows the
   rate-limit message after about 27s of retries. A DeepL free key is the simplest workaround.
 - Copy, speak and dictate are untested in a browser (they run as client-side JavaScript). Dictation shows an
@@ -56,7 +58,7 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Next up
 
-1. Anki CSV export; usage and cost tracking; PDF input.
+1. Usage and cost tracking; PDF input.
 2. Rename `Button(name=...)` to `label`.
 
 ## Notes for contributors

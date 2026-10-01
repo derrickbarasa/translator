@@ -223,3 +223,18 @@ def test_history_recent_targets(tmp_path):
     h.add("c", "auto", ["ja"], "z")
     assert h.recent_targets() == ["ja", "de", "fr"]
     assert h.recent_targets(limit=1) == ["ja"]
+
+
+def test_anki_csv_quotes_and_tags():
+    import csv
+    import io
+
+    from core import anki_csv
+
+    entries = [
+        {"text": "hello, world\nline two", "out": 'こんにちは "世界"', "targets": ["ja", "fr"]},
+        {"text": "plain", "out": "simple", "targets": []},
+    ]
+    rows = list(csv.reader(io.StringIO(anki_csv(entries))))
+    assert rows == [["hello, world\nline two", 'こんにちは "世界"', "ja"], ["plain", "simple", ""]]
+    assert anki_csv([]) == ""
