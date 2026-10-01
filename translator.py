@@ -9,6 +9,7 @@ import io
 import json
 import os
 import sys
+import threading
 
 from deep_translator import GoogleTranslator
 
@@ -19,8 +20,8 @@ try:
 except ImportError:
     pass
 
-from backends import BACKENDS, RateLimited, UnsupportedLanguage, get_backend
-from core import chunk_text, detect_language, translate_text
+from backends import BACKENDS, EngineError, RateLimited, UnsupportedLanguage, get_backend
+from core import annotate_cached, chunk_text, default_cache, detect_language, translate_text
 from files import SUPPORTED, translate_file
 
 FALLBACK_LANGUAGES = {"english": "en", "japanese": "ja", "french": "fr", "spanish": "es", "german": "de"}
@@ -56,9 +57,11 @@ async def run_with_progress(work, bar, total):
     Widgets are only touched here on the event loop, never from the worker thread.
     """
     done = {"n": 0}
+    lock = threading.Lock()
 
     def tick():
-        done["n"] += 1
+        with lock:  # translate_text may tick from several worker threads
+            done["n"] += 1
 
     if total:
         bar.max, bar.value = total, 0
@@ -101,12 +104,13 @@ def build_app():
     input_text = pn.widgets.TextAreaInput(
         name="Text", placeholder="Type or paste text here...", height=260, sizing_mode="stretch_width"
     )
+    status = pn.pane.Markdown("_Translation will appear here._", sizing_mode="stretch_width")
     mic_btn = pn.widgets.Button(name="🎤 Dictate", width=110, description="Speak instead of typing (browser feature)")
     mic_btn.js_on_click(
-        args={"inp": input_text, "src": source_lang, "codes": source_options},
+        args={"inp": input_text, "src": source_lang, "codes": source_options, "status": status},
         code="""
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR) { alert('Voice input is not supported in this browser.'); return; }
+        if (!SR) { status.object = '⚠️ Voice input is not supported in this browser.'; return; }
         const r = new SR();
         const code = codes[src.value];
         if (code && code !== 'auto') r.lang = code;
@@ -115,11 +119,10 @@ def build_app():
         """,
     )
     counter = pn.bind(lambda v: f"<small>{len(v):,} characters</small>", input_text.param.value_input)
-    translate_btn = pn.widgets.Button(name="Translate", button_type="primary", width=150)
+    translate_btn = pn.widgets.Button(name="Translate", color="primary", width=150)
 
     # ---- outputs ----
     progress = pn.indicators.Progress(value=0, max=100, visible=False, active=False, sizing_mode="stretch_width")
-    status = pn.pane.Markdown("_Translation will appear here._", sizing_mode="stretch_width")
     detected = pn.pane.Markdown("", sizing_mode="stretch_width")
     results = pn.Tabs(sizing_mode="stretch_width")
 
@@ -183,7 +186,7 @@ def build_app():
                 note = ""
                 if want_notes:
                     try:
-                        note = backend.annotate(text, translated, code)
+                        note = annotate_cached(backend, text, translated, code)
                     except Exception as e:  # notes are a bonus; never fail the translation over them
                         print(f"Annotation error: {e}")
                 out.append((code, translated, note))
@@ -200,10 +203,13 @@ def build_app():
             else:
                 detected.object = ""
             add_history(text, source, targets, out[0][1])
+            refresh_cache_info()
         except RateLimited:
             status.object = "⏳ The translation service is rate-limiting requests. Please wait a minute and try again."
         except UnsupportedLanguage as e:
             status.object = f"⚠️ {e} Try a different engine or language."
+        except EngineError as e:
+            status.object = f"❌ {e}"
         except Exception as e:
             status.object = f"❌ Translation failed ({type(e).__name__}). Please try again."
             print(f"Translation error: {e}")
@@ -267,22 +273,35 @@ def build_app():
             label = entry["text"].replace("\n", " ")
             btn = pn.widgets.Button(
                 name=f"{label[:40]}{'…' if len(label) > 40 else ''}  →  {entry['out'][:25]}",
-                button_type="light",
+                color="light",
                 sizing_mode="stretch_width",
             )
             btn.on_click(lambda event, e=entry: restore(e))
             rows.append(btn)
         history_box[:] = rows or [pn.pane.Markdown("_No translations yet._")]
 
-    clear_history_btn = pn.widgets.Button(name="Clear history", button_type="light", width=120)
+    clear_history_btn = pn.widgets.Button(name="Clear history", color="light", width=120)
     clear_history_btn.on_click(lambda event: (history.clear(), refresh_history()))
+
+    cache_info = pn.pane.Markdown("")
+    clear_cache_btn = pn.widgets.Button(name="Clear cache", color="light", width=120)
+
+    def refresh_cache_info():
+        cache_info.object = f"<small>{default_cache().count():,} cached translations</small>"
+
+    def clear_cache(event):
+        default_cache().clear()
+        refresh_cache_info()
+
+    clear_cache_btn.on_click(clear_cache)
+    refresh_cache_info()
     refresh_history()
 
     # ---- file translation ----
     file_input = pn.widgets.FileInput(accept=",".join(SUPPORTED), multiple=False)
-    file_btn = pn.widgets.Button(name="Translate file", button_type="success", width=150)
+    file_btn = pn.widgets.Button(name="Translate file", color="success", width=150)
     download = pn.widgets.FileDownload(
-        label="Download translated file", button_type="primary", disabled=True, auto=False, embed=False, width=220
+        label="Download translated file", color="primary", disabled=True, auto=False, embed=False, width=220
     )
     file_progress = pn.indicators.Progress(value=-1, visible=False, active=False, sizing_mode="stretch_width")
     file_status = pn.pane.Markdown("", sizing_mode="stretch_width")
@@ -319,6 +338,8 @@ def build_app():
             file_status.object = "⏳ Rate-limited. Please wait a minute and try again."
         except UnsupportedLanguage as e:
             file_status.object = f"⚠️ {e}"
+        except EngineError as e:
+            file_status.object = f"❌ {e}"
         except Exception as e:
             file_status.object = f"❌ File translation failed: {e}"
             print(f"File translation error: {e}")
@@ -359,6 +380,9 @@ def build_app():
             pn.pane.Markdown("**History**"),
             history_box,
             clear_history_btn,
+            pn.layout.Divider(),
+            cache_info,
+            clear_cache_btn,
         ],
         main=[
             pn.Row(source_lang, swap_btn, target_langs, sizing_mode="stretch_width"),
@@ -391,6 +415,9 @@ def cli(argv=None):
         print(translate_text(text, args.source, args.target, backend))
     except RateLimited:
         print("Rate-limited by the translation service; try again shortly.", file=sys.stderr)
+        return 1
+    except (EngineError, UnsupportedLanguage) as e:
+        print(str(e), file=sys.stderr)
         return 1
     return 0
 

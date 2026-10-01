@@ -89,3 +89,87 @@ def test_progress_callback_per_chunk(tmp_path):
     cache = Cache(str(tmp_path / "c.sqlite"))
     translate_text(text, "auto", "ja", Fake(), cache, on_chunk=lambda: ticks.append(1))
     assert len(ticks) == len(chunk_text(text, Fake.max_chars))
+
+
+def test_parallel_chunks_keep_order_and_progress(tmp_path):
+    import time
+
+    class Slow(Fake):
+        workers = 4
+
+        def translate(self, text, source, target):
+            time.sleep(0.05 if text.startswith("a") else 0)  # first chunk finishes last
+            return text.upper()
+
+    text = "a" * 15 + "\n" + "b" * 15 + "\n" + "c" * 15 + "\n"
+    ticks = []
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    assert translate_text(text, "auto", "ja", Slow(), cache, on_chunk=lambda: ticks.append(1)) == text.upper()
+    assert len(ticks) == 3
+
+
+def test_parallel_failure_propagates(tmp_path):
+    class Boom(Fake):
+        def translate(self, text, source, target):
+            raise RateLimited("slow down")
+
+    with pytest.raises(RateLimited):
+        translate_text("a" * 15 + "\n" + "b" * 15, "auto", "ja", Boom(), Cache(str(tmp_path / "c.sqlite")))
+
+
+def test_cache_cap_evicts_least_recently_used(tmp_path):
+    cache = Cache(str(tmp_path / "c.sqlite"), max_entries=2)
+    cache.set("a", "1")
+    cache.set("b", "2")
+    cache.get("a")  # a is now more recent than b
+    cache.set("c", "3")
+    assert cache.get("b") is None
+    assert cache.get("a") == "1" and cache.get("c") == "3"
+    assert cache.count() == 2
+
+
+def test_cache_clear(tmp_path):
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    cache.set("a", "1")
+    cache.clear()
+    assert cache.count() == 0 and cache.get("a") is None
+
+
+def test_cache_migrates_old_schema(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "old.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE cache (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        db.execute("INSERT INTO cache VALUES ('k', 'v')")
+    cache = Cache(path)
+    assert cache.get("k") == "v"
+    cache.set("k2", "v2")
+
+
+def test_claude_cache_key_includes_model(monkeypatch):
+    from backends import Claude
+
+    monkeypatch.setenv("CLAUDE_MODEL", "model-a")
+    first = Claude().cache_id
+    monkeypatch.setenv("CLAUDE_MODEL", "model-b")
+    assert Claude().cache_id != first
+
+
+def test_annotate_cached_bills_once(tmp_path):
+    from core import annotate_cached
+
+    class Noted(Fake):
+        n = 0
+
+        def annotate(self, original, translated, target):
+            Noted.n += 1
+            return "note"
+
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    backend = Noted()
+    assert annotate_cached(backend, "hi", "こんにちは", "ja", cache) == "note"
+    assert annotate_cached(backend, "hi", "こんにちは", "ja", cache) == "note"
+    assert Noted.n == 1
+    annotate_cached(backend, "hi", "やあ", "ja", cache)
+    assert Noted.n == 2

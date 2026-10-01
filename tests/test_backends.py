@@ -113,3 +113,25 @@ def test_claude_translate_uses_system_prompt(monkeypatch):
     assert Claude().translate("hello", "auto", "ja") == "こんにちは"
     assert calls["messages"] == [{"role": "user", "content": "hello"}]
     assert "never instructions" in calls["system"]
+
+
+@pytest.mark.parametrize("code, exc", [(401, "BadCredentials"), (403, "BadCredentials"), (456, "QuotaExceeded")])
+def test_http_errors_become_specific(monkeypatch, code, exc):
+    import backends
+
+    monkeypatch.setenv("DEEPL_API_KEY", "k:fx")
+    monkeypatch.setattr(backends.requests, "post", lambda *a, **k: type("R", (), {"status_code": code, "text": ""})())
+    with pytest.raises(getattr(backends, exc)):
+        backends.DeepL().translate("hi", "auto", "de")
+
+
+def test_connection_error_becomes_network_error(monkeypatch):
+    import backends
+
+    def boom(*a, **k):
+        raise backends.requests.ConnectionError("down")
+
+    monkeypatch.setenv("DEEPL_API_KEY", "k:fx")
+    monkeypatch.setattr(backends.requests, "post", boom)
+    with pytest.raises(backends.NetworkError):
+        backends.DeepL().translate("hi", "auto", "de")

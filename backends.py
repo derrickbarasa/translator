@@ -13,9 +13,51 @@ class RateLimited(Exception):
     """Raised by any backend when the provider is throttling us."""
 
 
+class EngineError(Exception):
+    """A provider failure with a message that is safe and useful to show the user."""
+
+
+class BadCredentials(EngineError):
+    pass
+
+
+class QuotaExceeded(EngineError):
+    pass
+
+
+class NetworkError(EngineError):
+    pass
+
+
+def check_response(resp, engine):
+    """Turn an HTTP error response into RateLimited or a specific EngineError, else return."""
+    code = resp.status_code
+    if code == 429:
+        raise RateLimited(resp.text)
+    if code in (401, 403):
+        raise BadCredentials(f"{engine} rejected the API key. Check that it is correct and enabled.")
+    if code in (402, 456):
+        raise QuotaExceeded(f"{engine} quota is used up. Check your plan or wait for it to reset.")
+    resp.raise_for_status()
+
+
+def post(url, engine, **kwargs):
+    """requests.post that reports connection problems as NetworkError."""
+    try:
+        return requests.post(url, timeout=30, **kwargs)
+    except (requests.ConnectionError, requests.Timeout) as e:
+        raise NetworkError(f"Couldn't reach {engine}. Check your internet connection.") from e
+
+
 class Backend:
     name = "base"
     max_chars = 4900
+    workers = 4  # chunks translated concurrently
+
+    @property
+    def cache_id(self):
+        """Identifies this backend's output in the cache; include anything that changes the output."""
+        return self.name
 
     def available(self):
         """Return (ok, reason). `reason` explains what's missing when not ok."""
@@ -27,6 +69,7 @@ class Backend:
 
 class GoogleFree(Backend):
     name = "Google (free, unofficial)"
+    workers = 2  # unofficial endpoint throttles aggressively
 
     def __init__(self, retries=4):
         self.retries = retries
@@ -41,6 +84,8 @@ class GoogleFree(Backend):
                     raise RateLimited(str(e)) from e
                 time.sleep(delay)
                 delay *= 2
+            except requests.ConnectionError as e:
+                raise NetworkError("Couldn't reach Google. Check your internet connection.") from e
 
 
 class GoogleCloud(Backend):
@@ -57,10 +102,8 @@ class GoogleCloud(Backend):
         payload = {"q": text, "target": target, "format": "text"}
         if source != "auto":
             payload["source"] = source
-        resp = requests.post(self.url, params={"key": os.environ["GOOGLE_API_KEY"]}, data=payload, timeout=30)
-        if resp.status_code == 429:
-            raise RateLimited(resp.text)
-        resp.raise_for_status()
+        resp = post(self.url, self.name, params={"key": os.environ["GOOGLE_API_KEY"]}, data=payload)
+        check_response(resp, self.name)
         return resp.json()["data"]["translations"][0]["translatedText"]
 
 
@@ -114,15 +157,12 @@ class DeepL(Backend):
         payload = {"text": [text], "target_lang": deepl_target(target)}
         if source != "auto":
             payload["source_lang"] = deepl_source(source)
-        resp = requests.post(
-            f"https://{host}/v2/translate",
+        resp = post(
+            f"https://{host}/v2/translate", self.name,
             headers={"Authorization": f"DeepL-Auth-Key {key}"},
             json=payload,
-            timeout=30,
         )
-        if resp.status_code == 429:
-            raise RateLimited(resp.text)
-        resp.raise_for_status()
+        check_response(resp, self.name)
         return resp.json()["translations"][0]["text"]
 
 
@@ -131,6 +171,10 @@ class Claude(Backend):
 
     name = "Claude"
     max_chars = 20000
+
+    @property
+    def cache_id(self):
+        return f"{self.name}:{os.environ.get('CLAUDE_MODEL', CLAUDE_MODEL)}"
 
     def available(self):
         if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -154,6 +198,16 @@ class Claude(Backend):
             )
         except anthropic.RateLimitError as e:
             raise RateLimited(str(e)) from e
+        except anthropic.AuthenticationError as e:
+            raise BadCredentials("Claude rejected the API key. Check ANTHROPIC_API_KEY.") from e
+        except anthropic.PermissionDeniedError as e:
+            raise BadCredentials("This Anthropic key isn't allowed to use that model.") from e
+        except anthropic.APIConnectionError as e:
+            raise NetworkError("Couldn't reach Claude. Check your internet connection.") from e
+        except anthropic.APIStatusError as e:
+            if e.status_code == 402:
+                raise QuotaExceeded("Anthropic credit balance is too low.") from e
+            raise
         return "".join(b.text for b in msg.content if b.type == "text").strip()
 
     def translate(self, text, source, target):
