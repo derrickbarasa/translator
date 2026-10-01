@@ -63,7 +63,7 @@ def test_ctrl_enter_translates_text_typed_but_not_yet_blurred(monkeypatch, tmp_p
     monkeypatch.setattr(translator, "load_languages", lambda: {"english": "en", "japanese": "ja"})
     monkeypatch.setattr(translator, "default_history", lambda: core.History(str(tmp_path / "h.sqlite"), enabled=True))
     monkeypatch.setattr(translator, "default_cache", lambda: core.Cache(str(tmp_path / "c.sqlite")))
-    monkeypatch.setattr(translator, "get_backend", lambda name: Echo())
+    monkeypatch.setattr(translator, "get_backend", lambda name, **kw: Echo())
     monkeypatch.setitem(translator.BACKENDS, "Echo", Echo)
     app = translator.build_app()
     text_input = _find(app, lambda o: isinstance(o, pn.widgets.TextAreaInput))

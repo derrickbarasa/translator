@@ -4,7 +4,7 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 54 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
+Working app on `main`. 57 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
 bar, rate-limit message. **Not verified:** the Ctrl+Enter key listener in a real browser (the Python side is tested); a successful translation render (Google rate-limited the dev
 machine's IP) and the Claude / DeepL / Google Cloud engines against their real APIs (mocked tests only).
 
@@ -22,7 +22,7 @@ machine's IP) and the Claude / DeepL / Google Cloud engines against their real A
 ## Done
 
 **Engines** (`backends.py`): Google free (retry with backoff), Google Cloud, DeepL (direct API, code mapping,
-clear unsupported-language error), Claude (translation plus optional reading and nuance notes). All raise a
+clear unsupported-language error), Claude (translation plus optional reading and nuance notes, tone selector, glossary). All raise a
 shared `RateLimited` error, or `BadCredentials` / `QuotaExceeded` / `NetworkError` with user-facing messages.
 
 **Core** (`core.py`): parallel chunk translation (ordered, per-engine worker count); chunking by line, then sentence (incl. CJK punctuation), then word, then hard cut, with
@@ -56,7 +56,7 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Next up
 
-1. Tone selector and glossary for Claude; Anki CSV export; usage and cost tracking; PDF input.
+1. Anki CSV export; usage and cost tracking; PDF input.
 2. Rename `Button(name=...)` to `label`.
 
 ## Notes for contributors

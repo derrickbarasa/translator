@@ -20,7 +20,7 @@ try:
 except ImportError:
     pass
 
-from backends import BACKENDS, EngineError, RateLimited, UnsupportedLanguage, get_backend
+from backends import BACKENDS, TONES, EngineError, RateLimited, UnsupportedLanguage, get_backend
 from core import annotate_cached, chunk_text, default_cache, default_history, detect_language, translate_text
 from files import SUPPORTED, translate_file
 
@@ -116,6 +116,13 @@ def build_app():
     backend_select = pn.widgets.Select(name="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)))
     live_toggle = pn.widgets.Checkbox(name="Live translate", value=False)
     annotate_toggle = pn.widgets.Checkbox(name="Reading & notes (Claude only)", value=False)
+    tone_select = pn.widgets.Select(name="Tone (Claude only)", options=list(TONES), value="Default")
+    glossary_input = pn.widgets.TextAreaInput(
+        name="Glossary (Claude only)",
+        placeholder="one per line:\nsource term = required translation",
+        height=90,
+        sizing_mode="stretch_width",
+    )
 
     # ---- inputs ----
     source_lang = pn.widgets.Select(name="From", options=source_options, value="auto", width=200)
@@ -175,7 +182,7 @@ def build_app():
         return pn.Column(*parts, sizing_mode="stretch_width")
 
     def check_backend():
-        backend = get_backend(backend_select.value)
+        backend = get_backend(backend_select.value, tone=tone_select.value, glossary=glossary_input.value_input)
         ok, reason = backend.available()
         return backend, ok, reason
 
@@ -438,6 +445,8 @@ def build_app():
             backend_select,
             live_toggle,
             annotate_toggle,
+            tone_select,
+            glossary_input,
             pn.layout.Divider(),
             pn.pane.Markdown("**History**"),
             history_search,
@@ -464,6 +473,8 @@ def cli(argv=None):
     parser.add_argument("--to", dest="target", default="en", help="Target language code (default: en)")
     parser.add_argument("--from", dest="source", default="auto", help="Source language code (default: auto)")
     parser.add_argument("--engine", default=next(iter(BACKENDS)), choices=list(BACKENDS), help="Translation engine")
+    parser.add_argument("--tone", default="Default", choices=list(TONES), help="Tone (Claude engine only)")
+    parser.add_argument("--glossary", help="File of `term = translation` lines (Claude engine only)")
     parser.add_argument("--demo", action="store_true", help="Run the sample translations")
     args = parser.parse_args(argv)
 
@@ -471,7 +482,11 @@ def cli(argv=None):
         demo()
         return 0
     text = args.text if args.text is not None else sys.stdin.read()
-    backend = get_backend(args.engine)
+    glossary = ""
+    if args.glossary:
+        with open(args.glossary, encoding="utf-8") as f:
+            glossary = f.read()
+    backend = get_backend(args.engine, tone=args.tone, glossary=glossary)
     ok, reason = backend.available()
     if not ok:
         print(f"{backend.name} isn't configured: {reason}", file=sys.stderr)

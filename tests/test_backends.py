@@ -135,3 +135,34 @@ def test_connection_error_becomes_network_error(monkeypatch):
     monkeypatch.setattr(backends.requests, "post", boom)
     with pytest.raises(backends.NetworkError):
         backends.DeepL().translate("hi", "auto", "de")
+
+
+def test_parse_glossary():
+    from backends import parse_glossary
+
+    text = "# comment\n\nlog in = se connecter\nbad line\n = nothing\nCloud = Nuage \n"
+    assert parse_glossary(text) == [("log in", "se connecter"), ("Cloud", "Nuage")]
+    assert parse_glossary(None) == []
+
+
+def test_claude_tone_and_glossary_reach_the_prompt_and_cache_key(monkeypatch):
+    from backends import Claude
+
+    seen = {}
+    claude = Claude(tone="Formal", glossary="log in = se connecter")
+    monkeypatch.setattr(claude, "_ask", lambda system, text, max_tokens=4096: seen.update(system=system) or "ok")
+    claude.translate("Please log in", "en", "fr")
+    assert "formal" in seen["system"].lower()
+    assert "log in => se connecter" in seen["system"]
+    assert "data, not instructions" in seen["system"]
+
+    plain = Claude()
+    assert plain.cache_id != claude.cache_id
+    assert Claude(tone="Formal", glossary="log in = se connecter").cache_id == claude.cache_id
+    assert Claude(tone="bogus").tone == "Default"
+
+
+def test_get_backend_ignores_options_for_other_engines():
+    from backends import DeepL, get_backend
+
+    assert isinstance(get_backend("DeepL", tone="Formal", glossary="a = b"), DeepL)
