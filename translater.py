@@ -1,4 +1,8 @@
+import time
+from functools import lru_cache
+
 from deep_translator import GoogleTranslator
+from deep_translator.exceptions import TooManyRequests
 import panel as pn
 
 MAX_CHARS = 4900  # Google's free endpoint rejects requests of ~5000+ chars
@@ -40,13 +44,27 @@ def chunk_text(text, limit=MAX_CHARS):
     return chunks
 
 
+@lru_cache(maxsize=256)
+def translate_chunk(chunk, source, target, retries=4):
+    """Translate one chunk, backing off and retrying when Google rate-limits us."""
+    delay = 1.0
+    for attempt in range(retries + 1):
+        try:
+            return GoogleTranslator(source=source, target=target).translate(chunk)
+        except TooManyRequests:
+            if attempt == retries:
+                raise
+            time.sleep(delay)
+            delay *= 2
+
+
 def translate_text(text, source, target):
     parts = []
     for chunk in chunk_text(text):
         if not chunk.strip():
             parts.append(chunk)
             continue
-        parts.append(GoogleTranslator(source=source, target=target).translate(chunk))
+        parts.append(translate_chunk(chunk, source, target))
     return "".join(parts)
 
 
@@ -90,7 +108,10 @@ def do_translate(event):
         translated = translate_text(text, source_lang.value, target_lang.value)
         output_text.object = f"### **Translated Text:**\n\n{translated}"
     except Exception as e:
-        output_text.object = f"❌ Translation failed ({type(e).__name__}). Please try again."
+        if isinstance(e, TooManyRequests):
+            output_text.object = "⏳ Google is rate-limiting requests. Please wait a minute and try again."
+        else:
+            output_text.object = f"❌ Translation failed ({type(e).__name__}). Please try again."
         print(f"Translation error: {e}")
     finally:
         translate_btn.disabled = False
