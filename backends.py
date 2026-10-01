@@ -1,5 +1,6 @@
 """Translation backends: free Google, official Google Cloud, DeepL, and Claude."""
 import hashlib
+import html
 import json
 import os
 import time
@@ -168,6 +169,43 @@ class DeepL(Backend):
         return resp.json()["translations"][0]["text"]
 
 
+class MyMemory(Backend):
+    """Keyless fallback. It is translation-memory based, so quality is noticeably worse than the others.
+
+    Anonymous use is capped at about 5,000 characters a day; MYMEMORY_EMAIL raises that.
+    """
+
+    name = "MyMemory (free, lower quality)"
+    max_chars = 450  # the API rejects queries over 500 characters
+    workers = 2
+    url = "https://api.mymemory.translated.net/get"
+
+    def translate(self, text, source, target):
+        params = {"q": text, "langpair": f"{'Autodetect' if source == 'auto' else source}|{target}"}
+        if os.environ.get("MYMEMORY_EMAIL"):
+            params["de"] = os.environ["MYMEMORY_EMAIL"]
+        try:
+            resp = requests.get(self.url, params=params, timeout=30)
+            resp.raise_for_status()
+            body = resp.json()
+        except (requests.ConnectionError, requests.Timeout) as e:
+            raise NetworkError(f"Couldn't reach {self.name}. Check your internet connection.") from e
+        # Failures come back as HTTP 200 with the real status in the body, sometimes as the "translation".
+        status = int(body.get("responseStatus") or 200)
+        result = (body.get("responseData") or {}).get("translatedText") or ""
+        message = f"{body.get('responseDetails') or ''} {result}".upper()
+        if status == 429 or "USED ALL AVAILABLE" in message:
+            raise QuotaExceeded(
+                "MyMemory's free daily limit is used up. Try again tomorrow, set MYMEMORY_EMAIL to raise it, "
+                "or switch engine."
+            )
+        if status != 200:
+            if "INVALID" in message and "LANGUAGE" in message:
+                raise UnsupportedLanguage(f"MyMemory can't translate '{source}' to '{target}'.")
+            raise EngineError(f"MyMemory error: {body.get('responseDetails') or status}")
+        return html.unescape(result)
+
+
 TONES = {
     "Default": "",
     "Formal": "Use a formal, polite register.",
@@ -276,7 +314,7 @@ class Claude(Backend):
         return self._ask(system, f"Original:\n{original}\n\nTranslation:\n{translated}", max_tokens=800)
 
 
-BACKENDS = {cls.name: cls for cls in (GoogleFree, GoogleCloud, DeepL, Claude)}
+BACKENDS = {cls.name: cls for cls in (GoogleFree, MyMemory, GoogleCloud, DeepL, Claude)}
 
 
 def get_backend(name, **options):

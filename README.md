@@ -1,7 +1,7 @@
 # translator
 
 An interactive text translator built with [Panel](https://panel.holoviz.org/), with pluggable
-engines (free Google, Google Cloud, DeepL, Claude).
+engines (free Google, MyMemory, Google Cloud, DeepL, Claude).
 
 ## Setup
 
@@ -34,7 +34,8 @@ docker build -t translator . && docker run -p 5006:5006 --env-file .env translat
 
 ## Features
 
-- **Engines:** Google (free, no key), Google Cloud (`GOOGLE_API_KEY`), DeepL (`DEEPL_API_KEY`),
+- **Engines:** Google (free, no key), MyMemory (free, no key, lower quality; optional `MYMEMORY_EMAIL` raises the
+  daily limit), Google Cloud (`GOOGLE_API_KEY`), DeepL (`DEEPL_API_KEY`),
   Claude (`ANTHROPIC_API_KEY`, optional `CLAUDE_MODEL`).
 - **Claude extras:** tick *Add reading & notes* for romaji/pinyin and nuance/idiom notes. Pick a *Tone* (formal, casual, ...) and add a *Glossary* (`term = required translation`,
   one per line) to control wording; the CLI has `--tone` and `--glossary FILE`.

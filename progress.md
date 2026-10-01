@@ -4,9 +4,13 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 67 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
-bar, rate-limit message. **Not verified:** the Ctrl+Enter key listener in a real browser (the Python side is tested); a successful translation render (Google rate-limited the dev
-machine's IP) and the Claude / DeepL / Google Cloud engines against their real APIs (mocked tests only).
+Working app on `main`. 74 tests pass, `ruff` is clean. Verified in a real browser (earlier): layout, async flow,
+progress bar, rate-limit message. Verified with a real API but without a browser: the full translate flow
+(CLI and the app's async path, two targets) through MyMemory.
+
+**Not verified:** the Ctrl+Enter listener, copy, speak, dictate and the two download buttons in a browser (the
+Python side is tested); a Google free translation (it rate-limits the dev machine's IP); and the Claude, DeepL
+and Google Cloud engines against their real APIs (mocked tests only; no keys available).
 
 ## History
 
@@ -21,7 +25,8 @@ machine's IP) and the Claude / DeepL / Google Cloud engines against their real A
 
 ## Done
 
-**Engines** (`backends.py`): Google free (retry with backoff), Google Cloud, DeepL (direct API, code mapping,
+**Engines** (`backends.py`): Google free (retry with backoff), MyMemory (keyless fallback, lower quality, ~5,000
+chars/day anonymous), Google Cloud, DeepL (direct API, code mapping,
 clear unsupported-language error), Claude (translation plus optional reading and nuance notes, tone selector, glossary). All raise a
 shared `RateLimited` error, or `BadCredentials` / `QuotaExceeded` / `NetworkError` with user-facing messages.
 
@@ -41,6 +46,8 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Known limitations
 
+- MyMemory is translation-memory based: it handled sentences well in testing but returned nonsense for a short
+  greeting into Japanese. Treat it as a fallback, not a default.
 - PDF input extracts text only: layout, tables and images are lost, scanned PDFs are rejected (no OCR), and the reflow
   heuristic can mis-join lines in multi-column documents. Output is a `.txt`.
 - Anki export covers the first target of each history entry only (history stores one output). The download button is

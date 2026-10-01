@@ -244,7 +244,10 @@ def build_app():
             add_history(text, source, targets, out[0][1])
             refresh_cache_info()
         except RateLimited:
-            status.object = "⏳ The translation service is rate-limiting requests. Please wait a minute and try again."
+            status.object = (
+                "⏳ The translation service is rate-limiting requests. "
+                "Wait a minute, or switch to another engine in the sidebar."
+            )
         except UnsupportedLanguage as e:
             status.object = f"⚠️ {e} Try a different engine or language."
         except EngineError as e:
@@ -421,7 +424,7 @@ def build_app():
             download.disabled = False
             file_status.object = f"✅ Done ({code_to_name.get(target, target)}). Use the download button."
         except RateLimited:
-            file_status.object = "⏳ Rate-limited. Please wait a minute and try again."
+            file_status.object = "⏳ Rate-limited. Wait a minute, or switch engine."
         except UnsupportedLanguage as e:
             file_status.object = f"⚠️ {e}"
         except EngineError as e:
@@ -511,7 +514,7 @@ def cli(argv=None):
     try:
         print(translate_text(text, args.source, args.target, backend))
     except RateLimited:
-        print("Rate-limited by the translation service; try again shortly.", file=sys.stderr)
+        print("Rate-limited by the translation service; try again shortly or pick another --engine.", file=sys.stderr)
         return 1
     except (EngineError, UnsupportedLanguage) as e:
         print(str(e), file=sys.stderr)
