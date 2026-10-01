@@ -79,6 +79,28 @@ async def run_with_progress(work, bar, total):
         bar.visible, bar.active = False, False
 
 
+def make_ctrl_enter():
+    """A page-level Ctrl/Cmd+Enter listener; bump `fired` each time it is pressed."""
+    import param
+    from panel.custom import JSComponent
+
+    class CtrlEnter(JSComponent):
+        fired = param.Integer(default=0)
+        _esm = """
+        export function render({ model }) {
+          const handler = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); model.fired += 1; }
+          };
+          document.addEventListener('keydown', handler);
+          const el = document.createElement('span');
+          el.style.display = 'none';
+          return el;
+        }
+        """
+
+    return CtrlEnter()
+
+
 def build_app():
     import panel as pn
 
@@ -118,6 +140,8 @@ def build_app():
         r.start();
         """,
     )
+    # `value` only updates on blur, `value_input` on every keystroke; keep them in step when set from code
+    input_text.param.watch(lambda e: setattr(input_text, "value_input", e.new), "value")
     counter = pn.bind(lambda v: f"<small>{len(v):,} characters</small>", input_text.param.value_input)
     translate_btn = pn.widgets.Button(name="Translate", color="primary", width=150)
 
@@ -160,7 +184,7 @@ def build_app():
         if state["busy"]:
             state["rerun"] = True  # text changed mid-flight; translate again once this one finishes
             return
-        text = input_text.value.strip()
+        text = input_text.value_input.strip()
         if not text:
             status.object = "⚠️ Please enter text to translate."
             return
@@ -224,6 +248,9 @@ def build_app():
 
     translate_btn.on_click(do_translate)
 
+    ctrl_enter = make_ctrl_enter()
+    ctrl_enter.param.watch(do_translate, "fired")
+
     # ---- swap languages ----
     def do_swap(event):
         src = source_lang.value
@@ -256,12 +283,29 @@ def build_app():
 
     input_text.param.watch(on_typing, "value_input")
 
+    # ---- recent target languages (derived from history) ----
+    recent_box = pn.Row(sizing_mode="stretch_width")
+
+    def use_target(code):
+        if code not in target_langs.value:
+            target_langs.value = [*target_langs.value, code]
+
+    def refresh_recent():
+        buttons = []
+        for code in history.recent_targets():
+            if code in code_to_name:
+                btn = pn.widgets.Button(name=code_to_name[code], color="light", width=90)
+                btn.on_click(lambda event, c=code: use_target(c))
+                buttons.append(btn)
+        recent_box[:] = ([pn.pane.Markdown("<small>Recent:</small>", align="center")] + buttons) if buttons else []
+
     # ---- history ----
     history_search = pn.widgets.TextInput(placeholder="Search history...", sizing_mode="stretch_width")
 
     def add_history(text, source, targets, translated):
         history.add(text, source, targets, translated)
         refresh_history()
+        refresh_recent()
 
     def restore(entry):
         source_lang.value = entry["source"]
@@ -310,6 +354,7 @@ def build_app():
     clear_cache_btn.on_click(clear_cache)
     refresh_cache_info()
     refresh_history()
+    refresh_recent()
 
     # ---- file translation ----
     file_input = pn.widgets.FileInput(accept=",".join(SUPPORTED), multiple=False)
@@ -367,7 +412,7 @@ def build_app():
     input_col = pn.Column(
         input_text,
         pn.Row(mic_btn, pn.pane.HTML(counter, align="center")),
-        translate_btn,
+        pn.Row(translate_btn, pn.pane.Markdown("<small>or press Ctrl+Enter</small>", align="center")),
         styles={"flex": "1 1 360px", "min-width": "0"},
     )
     output_col = pn.Column(
@@ -401,8 +446,10 @@ def build_app():
         ],
         main=[
             pn.Row(source_lang, swap_btn, target_langs, sizing_mode="stretch_width"),
+            recent_box,
             pn.FlexBox(input_col, output_col, flex_wrap="wrap", gap="16px", sizing_mode="stretch_width"),
             files_card,
+            ctrl_enter,
         ],
     )
 

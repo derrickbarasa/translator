@@ -162,6 +162,17 @@ class History:
             for i, src, tg, text, out in rows
         ]
 
+    def recent_targets(self, limit=5):
+        """Most recently used target language codes, newest first, without repeats."""
+        with self._lock, self._connect() as db:
+            rows = db.execute("SELECT targets FROM history ORDER BY id DESC LIMIT 50").fetchall()
+        seen = []
+        for (raw,) in rows:
+            for code in json.loads(raw):
+                if code not in seen:
+                    seen.append(code)
+        return seen[:limit]
+
     def delete(self, entry_id):
         with self._lock, self._connect() as db:
             db.execute("DELETE FROM history WHERE id = ?", (entry_id,))

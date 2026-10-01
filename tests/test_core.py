@@ -212,3 +212,14 @@ def test_history_cap_clear_and_disable(tmp_path):
     off = History(str(tmp_path / "off.sqlite"), enabled=False)
     off.add("secret", "auto", ["ja"], "x")
     assert off.list() == []
+
+
+def test_history_recent_targets(tmp_path):
+    from core import History
+
+    h = History(str(tmp_path / "h.sqlite"), enabled=True)
+    h.add("a", "auto", ["ja", "fr"], "x")
+    h.add("b", "auto", ["de"], "y")
+    h.add("c", "auto", ["ja"], "z")
+    assert h.recent_targets() == ["ja", "de", "fr"]
+    assert h.recent_targets(limit=1) == ["ja"]

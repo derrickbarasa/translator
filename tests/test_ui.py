@@ -38,3 +38,49 @@ def test_run_with_progress_propagates_errors():
         assert bar.visible is False
     else:
         raise AssertionError("expected ValueError")
+
+
+
+def _find(app, match):
+    for pane in app.main:
+        for obj in pane.select():
+            if match(obj):
+                return obj
+    raise AssertionError("widget not found")
+
+
+def test_ctrl_enter_translates_text_typed_but_not_yet_blurred(monkeypatch, tmp_path):
+    import core
+    from backends import Backend
+
+    class Echo(Backend):
+        name = "Echo"
+        workers = 1
+
+        def translate(self, text, source, target):
+            return text.upper()
+
+    monkeypatch.setattr(translator, "load_languages", lambda: {"english": "en", "japanese": "ja"})
+    monkeypatch.setattr(translator, "default_history", lambda: core.History(str(tmp_path / "h.sqlite"), enabled=True))
+    monkeypatch.setattr(translator, "default_cache", lambda: core.Cache(str(tmp_path / "c.sqlite")))
+    monkeypatch.setattr(translator, "get_backend", lambda name: Echo())
+    monkeypatch.setitem(translator.BACKENDS, "Echo", Echo)
+    app = translator.build_app()
+    text_input = _find(app, lambda o: isinstance(o, pn.widgets.TextAreaInput))
+    ctrl = _find(app, lambda o: type(o).__name__ == "CtrlEnter")
+    tabs = _find(app, lambda o: isinstance(o, pn.Tabs))
+    engine = next(w for w in app.sidebar[0].select() if isinstance(w, pn.widgets.Select))
+    engine.value = "Echo"
+
+    async def scenario():
+        text_input.value_input = "hello"  # what the browser sends while typing, before blur
+        ctrl.fired += 1
+        for _ in range(40):
+            await asyncio.sleep(0.1)
+            if len(tabs):
+                break
+
+    asyncio.run(scenario())
+    assert text_input.value == ""
+    assert len(tabs) == 1
+    assert "HELLO" in tabs[0].objects[0].value
