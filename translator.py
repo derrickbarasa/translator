@@ -384,7 +384,10 @@ def build_app():
         try:
             name, out = await run_with_progress(
                 lambda tick: translate_file(
-                    filename, data, lambda s: translate_text(s, source, target, backend, on_chunk=tick)
+                    filename,
+                    data,
+                    lambda s: translate_text(s, source, target, backend, on_chunk=tick),
+                    workers=backend.workers,
                 ),
                 file_progress,
                 None,

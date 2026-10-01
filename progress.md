@@ -4,7 +4,7 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 50 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
+Working app on `main`. 54 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
 bar, rate-limit message. **Not verified:** the Ctrl+Enter key listener in a real browser (the Python side is tested); a successful translation render (Google rate-limited the dev
 machine's IP) and the Claude / DeepL / Google Cloud engines against their real APIs (mocked tests only).
 
@@ -28,7 +28,7 @@ shared `RateLimited` error, or `BadCredentials` / `QuotaExceeded` / `NetworkErro
 **Core** (`core.py`): parallel chunk translation (ordered, per-engine worker count); chunking by line, then sentence (incl. CJK punctuation), then word, then hard cut, with
 lossless round-trip. SQLite cache that survives restarts (LRU cap, clear button in the sidebar, Claude model in the key, Claude notes cached). Per-chunk progress callback. Language detection.
 
-**Files** (`files.py`): `.txt`, `.srt` (cue numbers and timestamps preserved), `.docx`.
+**Files** (`files.py`): `.txt`, `.srt` (cue numbers and timestamps preserved), `.docx` (inline formatting kept, paragraphs translated concurrently).
 
 **UI** (`translator.py`): sidebar settings and history; side-by-side input and output that wraps on narrow
 screens; dark-mode toggle; non-blocking translation with progress bar; multiple targets as tabs; swap;
@@ -45,7 +45,9 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
   rate-limit message after about 27s of retries. A DeepL free key is the simplest workaround.
 - Copy, speak and dictate are untested in a browser (they run as client-side JavaScript). Dictation shows an
   inline notice if the browser has no speech recognition.
-- `.docx` translation keeps only the first run's formatting in each paragraph.
+- `.docx` formatting is spread across runs proportionally (snapped to word boundaries), so bold/italic spans stay
+  roughly where they were but can drift when word order differs between languages. Headers, footers, footnotes and
+  text boxes are not translated.
 - Language detection uses `langdetect` and is unreliable on very short text, which also affects swap.
 - Cache has a 5000-entry LRU cap but no expiry.
 - Engine failures other than rate limits, bad keys, quota and network errors still show a generic error.
@@ -54,9 +56,8 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Next up
 
-1. Preserve inline formatting in `.docx`.
-2. Tone selector and glossary for Claude; Anki CSV export; usage and cost tracking; PDF input.
-3. Rename `Button(name=...)` to `label`.
+1. Tone selector and glossary for Claude; Anki CSV export; usage and cost tracking; PDF input.
+2. Rename `Button(name=...)` to `label`.
 
 ## Notes for contributors
 
