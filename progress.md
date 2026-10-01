@@ -4,12 +4,12 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 74 tests pass, `ruff` is clean.
+Working app on `main`. 77 tests pass, `ruff` is clean.
 
 **Verified in a real browser** (Chrome, real keystrokes and clicks, MyMemory engine): layout, async flow,
 progress bar, a successful translation render, Ctrl+Enter, copy (pasted back), speak (called with the right text
 and language), history persistence across a server restart, history restore / search / delete, recent-language
-buttons, *Export for Anki* (real download, correct CSV), and file translation of a `.docx` (upload, translate,
+buttons, the usage counter (sent / cached characters), *Export for Anki* (real download, correct CSV), and file translation of a `.docx` (upload, translate,
 download; the bold span survived, slightly shifted). Also verified end to end from the CLI.
 
 **Not verified:** dictate (needs a microphone); `.srt`, `.txt` and `.pdf` uploads in a browser (only unit-tested);
@@ -42,7 +42,8 @@ lossless round-trip. SQLite cache that survives restarts (LRU cap, clear button 
 **UI** (`translator.py`): sidebar settings and history; side-by-side input and output that wraps on narrow
 screens; dark-mode toggle; non-blocking translation with progress bar; multiple targets as tabs; swap;
 detected language; live translate (debounced, re-runs if text changed mid-flight); Ctrl/Cmd+Enter to translate; recent target languages (from history) as one-click buttons; copy, speak, dictate
-(browser APIs); persistent history (SQLite, search, per-entry delete, Anki CSV export, shared across sessions, opt-out via `TRANSLATOR_HISTORY_DISABLED`); file translation card.
+(browser APIs); usage counter (per engine, per day);
+persistent history (SQLite, search, per-entry delete, Anki CSV export, shared across sessions, opt-out via `TRANSLATOR_HISTORY_DISABLED`); file translation card.
 
 **CLI:** `python translator.py "text" --to ja [--from xx] [--engine ...]`, `--demo`, stdin supported.
 
@@ -68,7 +69,8 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Next up
 
-1. Usage and cost tracking.
+1. Cost estimates for the paid engines (the character counter exists; prices need verifying against each
+   provider, and Claude bills per token, which the app doesn't read yet).
 
 ## Notes for contributors
 

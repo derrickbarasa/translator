@@ -238,3 +238,55 @@ def test_anki_csv_quotes_and_tags():
     rows = list(csv.reader(io.StringIO(anki_csv(entries))))
     assert rows == [["hello, world\nline two", 'こんにちは "世界"', "ja"], ["plain", "simple", ""]]
     assert anki_csv([]) == ""
+
+
+def test_usage_counts_sent_cached_and_limited(tmp_path):
+    from core import Cache
+
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    backend = Fake()
+    translate_text("hello\n\nworld", "auto", "ja", backend, cache)
+    first = cache.usage_today("fake")
+    assert first["chars"] == len("hello\n\nworld") and first["requests"] >= 1
+    assert first["cached_chars"] == 0 and first["limited"] == 0
+
+    translate_text("hello\n\nworld", "auto", "ja", backend, cache)  # all served from the cache
+    second = cache.usage_today("fake")
+    assert second["chars"] == first["chars"] and second["requests"] == first["requests"]
+    assert second["cached_chars"] == len("hello\n\nworld")
+
+    class Limited(Fake):
+        def translate(self, text, source, target):
+            raise RateLimited("slow down")
+
+    with pytest.raises(RateLimited):
+        translate_text("fresh text", "auto", "ja", Limited(), cache)
+    assert cache.usage_today("fake")["limited"] == 1
+    assert cache.usage_today("other engine") == {"chars": 0, "requests": 0, "cached_chars": 0, "limited": 0}
+
+
+def test_usage_persists_and_is_per_day(tmp_path, monkeypatch):
+    import core
+    from core import Cache
+
+    path = str(tmp_path / "c.sqlite")
+    Cache(path).record("fake", chars=10, requests=1)
+    assert Cache(path).usage_today("fake")["chars"] == 10  # survives a restart
+
+    class Tomorrow(core.date):
+        @classmethod
+        def today(cls):
+            return cls(2999, 1, 1)
+
+    monkeypatch.setattr(core, "date", Tomorrow)
+    assert Cache(path).usage_today("fake")["chars"] == 0  # a new day starts from zero
+
+
+def test_clearing_the_cache_keeps_usage(tmp_path):
+    from core import Cache
+
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    cache.record("fake", chars=5, requests=1)
+    cache.set("k", "v")
+    cache.clear()
+    assert cache.count() == 0 and cache.usage_today("fake")["chars"] == 5

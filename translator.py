@@ -35,6 +35,8 @@ from files import SUPPORTED, translate_file
 FALLBACK_LANGUAGES = {"english": "en", "japanese": "ja", "french": "fr", "spanish": "es", "german": "de"}
 HISTORY_LIMIT = 20  # entries shown in the sidebar
 LIVE_DEBOUNCE_MS = 800
+MYMEMORY = "MyMemory (free, lower quality)"
+USAGE_NOTES = {MYMEMORY: "The anonymous daily limit is roughly 5,000 characters."}  # approximate, set by the provider
 
 
 def load_languages():
@@ -260,6 +262,7 @@ def build_app():
             status.object = f"❌ Translation failed ({type(e).__name__}). Please try again."
             print(f"Translation error: {e}")
         finally:
+            refresh_usage()
             state["busy"] = False
             translate_btn.disabled = False
             translate_btn.label = "Translate"
@@ -391,6 +394,24 @@ def build_app():
 
     clear_cache_btn.on_click(clear_cache)
     refresh_cache_info()
+
+    usage_info = pn.pane.Markdown("", sizing_mode="stretch_width")
+
+    def refresh_usage(*_):
+        engine = backend_select.value
+        today = default_cache().usage_today(engine)
+        line = f"**Today, {engine}:** {today['chars']:,} characters sent"
+        if today["cached_chars"]:
+            line += f", {today['cached_chars']:,} served from cache"
+        if today["limited"]:
+            line += f", rate-limited {today['limited']}\u00d7"
+        note = USAGE_NOTES.get(engine, "")
+        if engine == MYMEMORY and os.environ.get("MYMEMORY_EMAIL"):
+            note = ""  # the anonymous cap doesn't apply once an email is set
+        usage_info.object = f"<small>{line}.{' ' + note if note else ''}</small>"
+
+    backend_select.param.watch(refresh_usage, "value")
+    refresh_usage()
     refresh_history()
     refresh_recent()
 
@@ -444,6 +465,7 @@ def build_app():
             file_status.object = f"❌ File translation failed: {e}"
             print(f"File translation error: {e}")
         finally:
+            refresh_usage()
             file_btn.disabled = False
             file_btn.label = "Translate file"
 
@@ -486,6 +508,7 @@ def build_app():
             pn.layout.Divider(),
             cache_info,
             clear_cache_btn,
+            usage_info,
         ],
         main=[
             pn.Row(source_lang, swap_btn, target_langs, sizing_mode="stretch_width"),

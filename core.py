@@ -9,6 +9,9 @@ import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
+
+from backends import QuotaExceeded, RateLimited
 
 CACHE_PATH = os.environ.get("TRANSLATOR_CACHE", os.path.join(os.path.dirname(__file__), ".translation_cache.sqlite"))
 MAX_CHARS = 4900  # Google's free endpoint rejects requests of ~5000+ chars
@@ -78,6 +81,12 @@ class Cache:
             columns = [row[1] for row in db.execute("PRAGMA table_info(cache)")]
             if "used" not in columns:  # caches created before the size cap existed
                 db.execute("ALTER TABLE cache ADD COLUMN used REAL NOT NULL DEFAULT 0")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS usage (day TEXT NOT NULL, engine TEXT NOT NULL,"
+                " chars INTEGER NOT NULL DEFAULT 0, requests INTEGER NOT NULL DEFAULT 0,"
+                " cached_chars INTEGER NOT NULL DEFAULT 0, limited INTEGER NOT NULL DEFAULT 0,"
+                " PRIMARY KEY (day, engine))"
+            )
 
     def _connect(self):
         return sqlite3.connect(self.path)
@@ -100,6 +109,26 @@ class Cache:
                 "DELETE FROM cache WHERE key IN (SELECT key FROM cache ORDER BY used DESC LIMIT -1 OFFSET ?)",
                 (self.max_entries,),
             )
+
+    def record(self, engine, chars=0, requests=0, cached_chars=0, limited=0):
+        """Add to today's usage counters for `engine` (kept per local day; survives restarts)."""
+        with self._lock, self._connect() as db:
+            db.execute(
+                "INSERT INTO usage (day, engine, chars, requests, cached_chars, limited) VALUES (?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(day, engine) DO UPDATE SET chars = chars + excluded.chars,"
+                " requests = requests + excluded.requests, cached_chars = cached_chars + excluded.cached_chars,"
+                " limited = limited + excluded.limited",
+                (date.today().isoformat(), engine, chars, requests, cached_chars, limited),
+            )
+
+    def usage_today(self, engine):
+        """Today's counters for `engine`: characters sent, requests, characters served from cache, limit hits."""
+        with self._lock, self._connect() as db:
+            row = db.execute(
+                "SELECT chars, requests, cached_chars, limited FROM usage WHERE day = ? AND engine = ?",
+                (date.today().isoformat(), engine),
+            ).fetchone()
+        return dict(zip(("chars", "requests", "cached_chars", "limited"), row or (0, 0, 0, 0)))
 
     def count(self):
         with self._lock, self._connect() as db:
@@ -216,8 +245,15 @@ def translate_text(text, source, target, backend, cache=None, on_chunk=None):
             key = cache.key(backend.cache_id, source, target, chunk)
             result = cache.get(key)
             if result is None:
-                result = backend.translate(chunk, source, target)
+                try:
+                    result = backend.translate(chunk, source, target)
+                except (RateLimited, QuotaExceeded):
+                    cache.record(backend.name, limited=1)
+                    raise
                 cache.set(key, result)
+                cache.record(backend.name, chars=len(chunk), requests=1)
+            else:
+                cache.record(backend.name, cached_chars=len(chunk))
         else:
             result = chunk
         if on_chunk:

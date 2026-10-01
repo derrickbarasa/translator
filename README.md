@@ -70,6 +70,10 @@ message in the app and on the command line.
 - **History** saved in `.translation_history.sqlite` (override with `TRANSLATOR_HISTORY`): search, click to reload, ✕ to delete, *Export for Anki* downloads the listed entries as a CSV (front, back, language tag). It is shared by everyone using the server; set `TRANSLATOR_HISTORY_DISABLED=1` to record nothing.
 - **File translation:** `.txt`, `.srt` (timestamps preserved), `.docx` (inline formatting kept) and `.pdf` (text is extracted and returned as a `.txt`; scanned PDFs need OCR first).
 - **Persistent cache** in `.translation_cache.sqlite` (override with `TRANSLATOR_CACHE`).
+- **Usage counter** in the sidebar: characters sent to the selected engine today, how many came from the cache,
+  and how often you were rate-limited. It resets each day and is kept when you clear the cache. For MyMemory it
+  also shows the approximate anonymous daily limit. It counts characters, not money: no engine here has a price
+  the app knows about.
 - Responsive UI: translation runs off the UI thread with a progress bar; settings and history live in a
   sidebar, input and output sit side by side (stacking on narrow screens), and there's a dark-mode toggle.
 - Long input is chunked automatically, preferring line, then sentence, then word boundaries.
