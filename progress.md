@@ -4,13 +4,16 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 74 tests pass, `ruff` is clean. Verified in a real browser (earlier): layout, async flow,
-progress bar, rate-limit message. Verified with a real API but without a browser: the full translate flow
-(CLI and the app's async path, two targets) through MyMemory.
+Working app on `main`. 74 tests pass, `ruff` is clean.
 
-**Not verified:** the Ctrl+Enter listener, copy, speak, dictate and the two download buttons in a browser (the
-Python side is tested); a Google free translation (it rate-limits the dev machine's IP); and the Claude, DeepL
-and Google Cloud engines against their real APIs (mocked tests only; no keys available).
+**Verified in a real browser** (Chrome, real keystrokes and clicks, MyMemory engine): layout, async flow,
+progress bar, a successful translation render, Ctrl+Enter, copy (pasted back), speak (called with the right text
+and language), history persistence across a server restart, history restore / search / delete, recent-language
+buttons. Also verified end to end from the CLI.
+
+**Not verified:** dictate (needs a microphone), the *Export for Anki* download and the file-translation card in
+a browser; a Google free translation (it rate-limits the dev machine's IP); and the Claude, DeepL and Google
+Cloud engines against their real APIs (mocked tests only; no keys available).
 
 ## History
 
@@ -50,12 +53,10 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
   greeting into Japanese. Treat it as a fallback, not a default.
 - PDF input extracts text only: layout, tables and images are lost, scanned PDFs are rejected (no OCR), and the reflow
   heuristic can mis-join lines in multi-column documents. Output is a `.txt`.
-- Anki export covers the first target of each history entry only (history stores one output). The download button is
-  untested in a browser.
+- Anki export covers the first target of each history entry only (history stores one output).
 - Google's free endpoint is unofficial and currently rejects requests from the dev machine; the app shows the
   rate-limit message after about 27s of retries. A DeepL free key is the simplest workaround.
-- Copy, speak and dictate are untested in a browser (they run as client-side JavaScript). Dictation shows an
-  inline notice if the browser has no speech recognition.
+- Dictation is untested (needs a microphone); it shows an inline notice if the browser has no speech recognition.
 - `.docx` formatting is spread across runs proportionally (snapped to word boundaries), so bold/italic spans stay
   roughly where they were but can drift when word order differs between languages. Headers, footers, footnotes and
   text boxes are not translated.

@@ -84,3 +84,11 @@ def test_ctrl_enter_translates_text_typed_but_not_yet_blurred(monkeypatch, tmp_p
     assert text_input.value == ""
     assert len(tabs) == 1
     assert "HELLO" in tabs[0].objects[0].value
+
+    # the translation was recorded: it shows up as a Recent language, and deleting it removes that button
+    def labels():
+        return [o.label for pane in [*app.main, *app.sidebar] for o in pane.select(pn.widgets.Button)]
+
+    assert "Japanese" in labels()
+    next(o for pane in app.sidebar for o in pane.select(pn.widgets.Button) if o.label == "✕").clicks += 1
+    assert "Japanese" not in labels()

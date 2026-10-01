@@ -121,10 +121,14 @@ def build_app():
     default_target = "ja" if "ja" in target_options.values() else next(iter(target_options.values()))
 
     # ---- settings (sidebar) ----
-    backend_select = pn.widgets.Select(label="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)))
+    backend_select = pn.widgets.Select(
+        label="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)), sizing_mode="stretch_width"
+    )
     live_toggle = pn.widgets.Checkbox(label="Live translate", value=False)
     annotate_toggle = pn.widgets.Checkbox(label="Reading & notes (Claude only)", value=False)
-    tone_select = pn.widgets.Select(label="Tone (Claude only)", options=list(TONES), value="Default")
+    tone_select = pn.widgets.Select(
+        label="Tone (Claude only)", options=list(TONES), value="Default", sizing_mode="stretch_width"
+    )
     glossary_input = pn.widgets.TextAreaInput(
         label="Glossary (Claude only)",
         placeholder="one per line:\nsource term = required translation",
@@ -333,15 +337,17 @@ def build_app():
     def delete_entry(entry):
         history.delete(entry["id"])
         refresh_history()
+        refresh_recent()
 
     def refresh_history(*_):
         rows = []
         for entry in history.list(history_search.value_input, HISTORY_LIMIT):
             label = entry["text"].replace("\n", " ")
             btn = pn.widgets.Button(
-                label=f"{label[:40]}{'…' if len(label) > 40 else ''}  →  {entry['out'][:25]}",
+                label=f"{label[:24]}{'…' if len(label) > 24 else ''}",
                 color="light",
                 sizing_mode="stretch_width",
+                description=f"{entry['text'][:200]}\n→ {entry['out'][:200]}",  # full text on hover
             )
             btn.on_click(lambda event, e=entry: restore(e))
             remove = pn.widgets.Button(label="✕", color="light", width=40, description="Delete this entry")
@@ -357,19 +363,24 @@ def build_app():
         return io.BytesIO(anki_csv(entries).encode("utf-8"))
 
     anki_btn = pn.widgets.FileDownload(
-        callback=export_anki, filename="anki_cards.csv", label="Export for Anki", color="light", width=150,
+        callback=export_anki,
+        filename="anki_cards.csv",
+        label="Export for Anki",
+        color="light",
+        sizing_mode="stretch_width",
         description="Download the listed history as a CSV to import into Anki (front, back, language tag)",
     )
 
     def clear_history(event):
         history.clear()
         refresh_history()
+        refresh_recent()
 
-    clear_history_btn = pn.widgets.Button(label="Clear history", color="light", width=120)
+    clear_history_btn = pn.widgets.Button(label="Clear history", color="light", sizing_mode="stretch_width")
     clear_history_btn.on_click(clear_history)
 
     cache_info = pn.pane.Markdown("")
-    clear_cache_btn = pn.widgets.Button(label="Clear cache", color="light", width=120)
+    clear_cache_btn = pn.widgets.Button(label="Clear cache", color="light", sizing_mode="stretch_width")
 
     def refresh_cache_info():
         cache_info.object = f"<small>{default_cache().count():,} cached translations</small>"
@@ -471,7 +482,7 @@ def build_app():
             pn.pane.Markdown("**History**"),
             history_search,
             history_box,
-            pn.Row(clear_history_btn, anki_btn),
+            pn.Row(clear_history_btn, anki_btn, sizing_mode="stretch_width"),
             pn.layout.Divider(),
             cache_info,
             clear_cache_btn,
