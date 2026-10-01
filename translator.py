@@ -121,28 +121,28 @@ def build_app():
     default_target = "ja" if "ja" in target_options.values() else next(iter(target_options.values()))
 
     # ---- settings (sidebar) ----
-    backend_select = pn.widgets.Select(name="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)))
-    live_toggle = pn.widgets.Checkbox(name="Live translate", value=False)
-    annotate_toggle = pn.widgets.Checkbox(name="Reading & notes (Claude only)", value=False)
-    tone_select = pn.widgets.Select(name="Tone (Claude only)", options=list(TONES), value="Default")
+    backend_select = pn.widgets.Select(label="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)))
+    live_toggle = pn.widgets.Checkbox(label="Live translate", value=False)
+    annotate_toggle = pn.widgets.Checkbox(label="Reading & notes (Claude only)", value=False)
+    tone_select = pn.widgets.Select(label="Tone (Claude only)", options=list(TONES), value="Default")
     glossary_input = pn.widgets.TextAreaInput(
-        name="Glossary (Claude only)",
+        label="Glossary (Claude only)",
         placeholder="one per line:\nsource term = required translation",
         height=90,
         sizing_mode="stretch_width",
     )
 
     # ---- inputs ----
-    source_lang = pn.widgets.Select(name="From", options=source_options, value="auto", width=200)
-    swap_btn = pn.widgets.Button(name="⇄", width=50, align="end", description="Swap source and target")
+    source_lang = pn.widgets.Select(label="From", options=source_options, value="auto", width=200)
+    swap_btn = pn.widgets.Button(label="⇄", width=50, align="end", description="Swap source and target")
     target_langs = pn.widgets.MultiChoice(
-        name="To", options=target_options, value=[default_target], sizing_mode="stretch_width", min_width=200
+        label="To", options=target_options, value=[default_target], sizing_mode="stretch_width", min_width=200
     )
     input_text = pn.widgets.TextAreaInput(
-        name="Text", placeholder="Type or paste text here...", height=260, sizing_mode="stretch_width"
+        label="Text", placeholder="Type or paste text here...", height=260, sizing_mode="stretch_width"
     )
     status = pn.pane.Markdown("_Translation will appear here._", sizing_mode="stretch_width")
-    mic_btn = pn.widgets.Button(name="🎤 Dictate", width=110, description="Speak instead of typing (browser feature)")
+    mic_btn = pn.widgets.Button(label="🎤 Dictate", width=110, description="Speak instead of typing (browser feature)")
     mic_btn.js_on_click(
         args={"inp": input_text, "src": source_lang, "codes": source_options, "status": status},
         code="""
@@ -158,7 +158,7 @@ def build_app():
     # `value` only updates on blur, `value_input` on every keystroke; keep them in step when set from code
     input_text.param.watch(lambda e: setattr(input_text, "value_input", e.new), "value")
     counter = pn.bind(lambda v: f"<small>{len(v):,} characters</small>", input_text.param.value_input)
-    translate_btn = pn.widgets.Button(name="Translate", color="primary", width=150)
+    translate_btn = pn.widgets.Button(label="Translate", color="primary", width=150)
 
     # ---- outputs ----
     progress = pn.indicators.Progress(value=0, max=100, visible=False, active=False, sizing_mode="stretch_width")
@@ -173,9 +173,9 @@ def build_app():
     def result_panel(lang_code, text, note=""):
         height = max(120, min(400, 24 * (text.count("\n") + 3)))
         area = pn.widgets.TextAreaInput(value=text, disabled=True, height=height, sizing_mode="stretch_width")
-        copy_btn = pn.widgets.Button(name="📋 Copy", width=100)
+        copy_btn = pn.widgets.Button(label="📋 Copy", width=100)
         copy_btn.js_on_click(args={"out": area}, code="navigator.clipboard.writeText(out.value);")
-        speak_btn = pn.widgets.Button(name="🔊 Speak", width=100)
+        speak_btn = pn.widgets.Button(label="🔊 Speak", width=100)
         speak_btn.js_on_click(
             args={"out": area},
             code=f"""
@@ -214,7 +214,7 @@ def build_app():
 
         state["busy"] = True
         translate_btn.disabled = True
-        translate_btn.name = "Translating..."
+        translate_btn.label = "Translating..."
         source = source_lang.value
         want_notes = annotate_toggle.value and hasattr(backend, "annotate")
 
@@ -255,7 +255,7 @@ def build_app():
         finally:
             state["busy"] = False
             translate_btn.disabled = False
-            translate_btn.name = "Translate"
+            translate_btn.label = "Translate"
         if state["rerun"]:
             state["rerun"] = False
             if live_toggle.value:
@@ -309,7 +309,7 @@ def build_app():
         buttons = []
         for code in history.recent_targets():
             if code in code_to_name:
-                btn = pn.widgets.Button(name=code_to_name[code], color="light", width=90)
+                btn = pn.widgets.Button(label=code_to_name[code], color="light", width=90)
                 btn.on_click(lambda event, c=code: use_target(c))
                 buttons.append(btn)
         recent_box[:] = ([pn.pane.Markdown("<small>Recent:</small>", align="center")] + buttons) if buttons else []
@@ -336,12 +336,12 @@ def build_app():
         for entry in history.list(history_search.value_input, HISTORY_LIMIT):
             label = entry["text"].replace("\n", " ")
             btn = pn.widgets.Button(
-                name=f"{label[:40]}{'…' if len(label) > 40 else ''}  →  {entry['out'][:25]}",
+                label=f"{label[:40]}{'…' if len(label) > 40 else ''}  →  {entry['out'][:25]}",
                 color="light",
                 sizing_mode="stretch_width",
             )
             btn.on_click(lambda event, e=entry: restore(e))
-            remove = pn.widgets.Button(name="✕", color="light", width=40, description="Delete this entry")
+            remove = pn.widgets.Button(label="✕", color="light", width=40, description="Delete this entry")
             remove.on_click(lambda event, e=entry: delete_entry(e))
             rows.append(pn.Row(btn, remove, sizing_mode="stretch_width"))
         empty = "_No matches._" if history_search.value_input else "_No translations yet._"
@@ -362,11 +362,11 @@ def build_app():
         history.clear()
         refresh_history()
 
-    clear_history_btn = pn.widgets.Button(name="Clear history", color="light", width=120)
+    clear_history_btn = pn.widgets.Button(label="Clear history", color="light", width=120)
     clear_history_btn.on_click(clear_history)
 
     cache_info = pn.pane.Markdown("")
-    clear_cache_btn = pn.widgets.Button(name="Clear cache", color="light", width=120)
+    clear_cache_btn = pn.widgets.Button(label="Clear cache", color="light", width=120)
 
     def refresh_cache_info():
         cache_info.object = f"<small>{default_cache().count():,} cached translations</small>"
@@ -382,7 +382,7 @@ def build_app():
 
     # ---- file translation ----
     file_input = pn.widgets.FileInput(accept=",".join(SUPPORTED), multiple=False)
-    file_btn = pn.widgets.Button(name="Translate file", color="success", width=150)
+    file_btn = pn.widgets.Button(label="Translate file", color="success", width=150)
     download = pn.widgets.FileDownload(
         label="Download translated file", color="primary", disabled=True, auto=False, embed=False, width=220
     )
@@ -402,7 +402,7 @@ def build_app():
             file_status.object = f"🔑 {backend.name} isn't configured: {reason}"
             return
         file_btn.disabled = True
-        file_btn.name = "Translating..."
+        file_btn.label = "Translating..."
         source, target = source_lang.value, targets[0]
         filename, data = file_input.filename, file_input.value
         try:
@@ -431,7 +431,7 @@ def build_app():
             print(f"File translation error: {e}")
         finally:
             file_btn.disabled = False
-            file_btn.name = "Translate file"
+            file_btn.label = "Translate file"
 
     file_btn.on_click(do_file)
 

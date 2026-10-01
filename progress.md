@@ -56,12 +56,10 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 - Cache has a 5000-entry LRU cap but no expiry.
 - Engine failures other than rate limits, bad keys, quota and network errors still show a generic error.
 - `translator.py` itself has only smoke-test coverage; the async translate and file flows are not unit tested.
-- Panel warns that `Button(name=...)` is deprecated in favour of `label` (Panel 2.0).
 
 ## Next up
 
 1. Usage and cost tracking.
-2. Rename `Button(name=...)` to `label`.
 
 ## Notes for contributors
 
