@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 .env
 .translation_cache.sqlite
+.translation_history.sqlite
 .pytest_cache/
 .ruff_cache/

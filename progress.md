@@ -4,7 +4,7 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 45 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
+Working app on `main`. 48 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
 bar, rate-limit message. **Not verified:** a successful translation render (Google rate-limited the dev
 machine's IP) and the Claude / DeepL / Google Cloud engines against their real APIs (mocked tests only).
 
@@ -33,7 +33,7 @@ lossless round-trip. SQLite cache that survives restarts (LRU cap, clear button 
 **UI** (`translator.py`): sidebar settings and history; side-by-side input and output that wraps on narrow
 screens; dark-mode toggle; non-blocking translation with progress bar; multiple targets as tabs; swap;
 detected language; live translate (debounced, re-runs if text changed mid-flight); copy, speak, dictate
-(browser APIs); session history; file translation card.
+(browser APIs); persistent history (SQLite, search, per-entry delete, shared across sessions, opt-out via `TRANSLATOR_HISTORY_DISABLED`); file translation card.
 
 **CLI:** `python translator.py "text" --to ja [--from xx] [--engine ...]`, `--demo`, stdin supported.
 
@@ -54,11 +54,10 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Next up
 
-1. Persist history to SQLite, with search and per-entry delete.
-2. Searchable language picker with recent and favorite languages; Ctrl+Enter to translate.
-3. Preserve inline formatting in `.docx`.
-4. Tone selector and glossary for Claude; Anki CSV export; usage and cost tracking; PDF input.
-5. Rename `Button(name=...)` to `label`.
+1. Searchable language picker with recent and favorite languages; Ctrl+Enter to translate.
+2. Preserve inline formatting in `.docx`.
+3. Tone selector and glossary for Claude; Anki CSV export; usage and cost tracking; PDF input.
+4. Rename `Button(name=...)` to `label`.
 
 ## Notes for contributors
 

@@ -21,11 +21,11 @@ except ImportError:
     pass
 
 from backends import BACKENDS, EngineError, RateLimited, UnsupportedLanguage, get_backend
-from core import annotate_cached, chunk_text, default_cache, detect_language, translate_text
+from core import annotate_cached, chunk_text, default_cache, default_history, detect_language, translate_text
 from files import SUPPORTED, translate_file
 
 FALLBACK_LANGUAGES = {"english": "en", "japanese": "ja", "french": "fr", "spanish": "es", "german": "de"}
-HISTORY_LIMIT = 20
+HISTORY_LIMIT = 20  # entries shown in the sidebar
 LIVE_DEBOUNCE_MS = 800
 
 
@@ -127,7 +127,7 @@ def build_app():
     results = pn.Tabs(sizing_mode="stretch_width")
 
     state = {"detected_code": None, "token": 0, "busy": False, "rerun": False}
-    history = []
+    history = default_history()
     history_box = pn.Column(sizing_mode="stretch_width")
 
     # ---- result panels (copy + speak run in the browser) ----
@@ -257,19 +257,24 @@ def build_app():
     input_text.param.watch(on_typing, "value_input")
 
     # ---- history ----
+    history_search = pn.widgets.TextInput(placeholder="Search history...", sizing_mode="stretch_width")
+
     def add_history(text, source, targets, translated):
-        history.insert(0, {"text": text, "source": source, "targets": targets, "out": translated})
-        del history[HISTORY_LIMIT:]
+        history.add(text, source, targets, translated)
         refresh_history()
 
     def restore(entry):
         source_lang.value = entry["source"]
-        target_langs.value = entry["targets"]
+        target_langs.value = [t for t in entry["targets"] if t in code_to_name] or target_langs.value
         input_text.value = entry["text"]
 
-    def refresh_history():
+    def delete_entry(entry):
+        history.delete(entry["id"])
+        refresh_history()
+
+    def refresh_history(*_):
         rows = []
-        for entry in history:
+        for entry in history.list(history_search.value_input, HISTORY_LIMIT):
             label = entry["text"].replace("\n", " ")
             btn = pn.widgets.Button(
                 name=f"{label[:40]}{'…' if len(label) > 40 else ''}  →  {entry['out'][:25]}",
@@ -277,11 +282,20 @@ def build_app():
                 sizing_mode="stretch_width",
             )
             btn.on_click(lambda event, e=entry: restore(e))
-            rows.append(btn)
-        history_box[:] = rows or [pn.pane.Markdown("_No translations yet._")]
+            remove = pn.widgets.Button(name="✕", color="light", width=40, description="Delete this entry")
+            remove.on_click(lambda event, e=entry: delete_entry(e))
+            rows.append(pn.Row(btn, remove, sizing_mode="stretch_width"))
+        empty = "_No matches._" if history_search.value_input else "_No translations yet._"
+        history_box[:] = rows or [pn.pane.Markdown(empty)]
+
+    history_search.param.watch(refresh_history, "value_input")
+
+    def clear_history(event):
+        history.clear()
+        refresh_history()
 
     clear_history_btn = pn.widgets.Button(name="Clear history", color="light", width=120)
-    clear_history_btn.on_click(lambda event: (history.clear(), refresh_history()))
+    clear_history_btn.on_click(clear_history)
 
     cache_info = pn.pane.Markdown("")
     clear_cache_btn = pn.widgets.Button(name="Clear cache", color="light", width=120)
@@ -378,6 +392,7 @@ def build_app():
             annotate_toggle,
             pn.layout.Divider(),
             pn.pane.Markdown("**History**"),
+            history_search,
             history_box,
             clear_history_btn,
             pn.layout.Divider(),

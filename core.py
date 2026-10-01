@@ -1,5 +1,6 @@
 """Chunking, persistent cache, and the translate pipeline (UI-independent)."""
 import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -107,7 +108,78 @@ class Cache:
             db.execute("DELETE FROM cache")
 
 
+HISTORY_PATH = os.environ.get(
+    "TRANSLATOR_HISTORY", os.path.join(os.path.dirname(__file__), ".translation_history.sqlite")
+)
+HISTORY_MAX_ENTRIES = 500
+
+
+class History:
+    """Persistent, searchable log of past translations.
+
+    Set TRANSLATOR_HISTORY_DISABLED=1 to record nothing (e.g. on a shared server: the history is
+    shared by everyone who uses the app).
+    """
+
+    def __init__(self, path=HISTORY_PATH, max_entries=HISTORY_MAX_ENTRIES, enabled=None):
+        self.path = path
+        self.max_entries = max_entries
+        self.enabled = enabled if enabled is not None else not os.environ.get("TRANSLATOR_HISTORY_DISABLED")
+        self._lock = threading.Lock()
+        with self._connect() as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, created REAL NOT NULL,"
+                " source TEXT NOT NULL, targets TEXT NOT NULL, text TEXT NOT NULL, output TEXT NOT NULL)"
+            )
+
+    def _connect(self):
+        return sqlite3.connect(self.path)
+
+    def add(self, text, source, targets, output):
+        if not self.enabled:
+            return
+        with self._lock, self._connect() as db:
+            db.execute(
+                "INSERT INTO history (created, source, targets, text, output) VALUES (?, ?, ?, ?, ?)",
+                (time.time(), source, json.dumps(list(targets)), text, output),
+            )
+            db.execute(
+                "DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT ?)",
+                (self.max_entries,),
+            )
+
+    def list(self, query="", limit=20):
+        """Newest first; `query` matches the original text or the translation (case-insensitive)."""
+        like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        with self._lock, self._connect() as db:
+            rows = db.execute(
+                "SELECT id, source, targets, text, output FROM history"
+                " WHERE text LIKE ? ESCAPE '\\' OR output LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?",
+                (like, like, limit),
+            ).fetchall()
+        return [
+            {"id": i, "source": src, "targets": json.loads(tg), "text": text, "out": out}
+            for i, src, tg, text, out in rows
+        ]
+
+    def delete(self, entry_id):
+        with self._lock, self._connect() as db:
+            db.execute("DELETE FROM history WHERE id = ?", (entry_id,))
+
+    def clear(self):
+        with self._lock, self._connect() as db:
+            db.execute("DELETE FROM history")
+
+
 _default_cache = None
+_default_history = None
+
+
+def default_history():
+    global _default_history
+    if _default_history is None:
+        _default_history = History()
+    return _default_history
 
 
 def default_cache():

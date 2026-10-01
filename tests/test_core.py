@@ -173,3 +173,42 @@ def test_annotate_cached_bills_once(tmp_path):
     assert Noted.n == 1
     annotate_cached(backend, "hi", "やあ", "ja", cache)
     assert Noted.n == 2
+
+
+def test_history_add_search_delete_persist(tmp_path):
+    from core import History
+
+    path = str(tmp_path / "h.sqlite")
+    h = History(path, enabled=True)
+    h.add("hello world", "auto", ["ja", "fr"], "こんにちは")
+    h.add("good night", "en", ["de"], "gute Nacht")
+    rows = History(path, enabled=True).list()  # survives a restart
+    assert [r["text"] for r in rows] == ["good night", "hello world"]
+    assert rows[1]["targets"] == ["ja", "fr"]
+    assert [r["text"] for r in h.list("NACHT")] == ["good night"]  # matches the output, case-insensitive
+    h.delete(rows[0]["id"])
+    assert [r["text"] for r in h.list()] == ["hello world"]
+
+
+def test_history_search_treats_wildcards_literally(tmp_path):
+    from core import History
+
+    h = History(str(tmp_path / "h.sqlite"), enabled=True)
+    h.add("100% sure", "auto", ["fr"], "sûr")
+    h.add("plain", "auto", ["fr"], "simple")
+    assert [r["text"] for r in h.list("%")] == ["100% sure"]
+    assert h.list("_") == []
+
+
+def test_history_cap_clear_and_disable(tmp_path):
+    from core import History
+
+    h = History(str(tmp_path / "h.sqlite"), max_entries=2, enabled=True)
+    for t in "abc":
+        h.add(t, "auto", ["ja"], t)
+    assert [r["text"] for r in h.list()] == ["c", "b"]
+    h.clear()
+    assert h.list() == []
+    off = History(str(tmp_path / "off.sqlite"), enabled=False)
+    off.add("secret", "auto", ["ja"], "x")
+    assert off.list() == []
