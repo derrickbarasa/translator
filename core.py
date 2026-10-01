@@ -1,6 +1,7 @@
 """Chunking, persistent cache, and the translate pipeline (UI-independent)."""
 import hashlib
 import os
+import re
 import sqlite3
 import threading
 
@@ -8,22 +9,43 @@ CACHE_PATH = os.environ.get("TRANSLATOR_CACHE", os.path.join(os.path.dirname(__f
 MAX_CHARS = 4900  # Google's free endpoint rejects requests of ~5000+ chars
 
 
-def chunk_text(text, limit=MAX_CHARS):
-    """Split text into pieces under `limit`, preferring line boundaries.
+_SENTENCE = re.compile(r".*?[.!?。！？…]+[\"'”’)\]]*\s*|.+", re.S)
 
-    Hard-splits only lines longer than `limit`, preferring whitespace so words stay whole.
+
+def _split_long(line, limit):
+    """Split an over-long line into pieces <= limit: sentences first, then spaces, then hard cuts."""
+    pieces, current = [], ""
+    for sentence in _SENTENCE.findall(line):
+        while len(sentence) > limit:  # a single "sentence" too long: break on whitespace, else hard cut
+            if current:
+                pieces.append(current)
+                current = ""
+            cut = sentence.rfind(" ", 0, limit)
+            cut = cut + 1 if cut > 0 else limit
+            pieces.append(sentence[:cut])
+            sentence = sentence[cut:]
+        if len(current) + len(sentence) > limit:
+            pieces.append(current)
+            current = ""
+        current += sentence
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def chunk_text(text, limit=MAX_CHARS):
+    """Split text into pieces under `limit`, preferring line, then sentence, then word boundaries.
+
     Joining the chunks always reproduces the input exactly.
     """
     chunks, current = [], ""
     for line in text.splitlines(keepends=True):
-        while len(line) > limit:
+        if len(line) > limit:
             if current:
                 chunks.append(current)
                 current = ""
-            cut = line.rfind(" ", 0, limit)
-            cut = cut + 1 if cut > 0 else limit
-            chunks.append(line[:cut])
-            line = line[cut:]
+            *full, line = _split_long(line, limit)
+            chunks.extend(full)
         if len(current) + len(line) > limit:
             chunks.append(current)
             current = ""
@@ -69,13 +91,18 @@ def default_cache():
     return _default_cache
 
 
-def translate_text(text, source, target, backend, cache=None):
-    """Translate `text` chunk by chunk through `backend`, using the cache when possible."""
+def translate_text(text, source, target, backend, cache=None, on_chunk=None):
+    """Translate `text` chunk by chunk through `backend`, using the cache when possible.
+
+    `on_chunk()` is called after each chunk finishes (used for progress reporting).
+    """
     cache = cache if cache is not None else default_cache()
     parts = []
     for chunk in chunk_text(text, backend.max_chars):
         if not chunk.strip():
             parts.append(chunk)
+            if on_chunk:
+                on_chunk()
             continue
         key = cache.key(backend.name, source, target, chunk)
         hit = cache.get(key)
@@ -83,6 +110,8 @@ def translate_text(text, source, target, backend, cache=None):
             hit = backend.translate(chunk, source, target)
             cache.set(key, hit)
         parts.append(hit)
+        if on_chunk:
+            on_chunk()
     return "".join(parts)
 
 

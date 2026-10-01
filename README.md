@@ -44,7 +44,9 @@ docker build -t translator . && docker run -p 5006:5006 --env-file .env translat
 - **History** of the session; click an entry to reload it.
 - **File translation:** `.txt`, `.srt` (timestamps preserved) and `.docx`.
 - **Persistent cache** in `.translation_cache.sqlite` (override with `TRANSLATOR_CACHE`).
-- Long input is chunked automatically, preferring line then word boundaries.
+- Responsive UI: translation runs off the UI thread with a progress bar; settings and history live in a
+  sidebar, input and output sit side by side (stacking on narrow screens), and there's a dark-mode toggle.
+- Long input is chunked automatically, preferring line, then sentence, then word boundaries.
 
 ## Development
 
@@ -59,5 +61,5 @@ CI runs both on every push (`.github/workflows/ci.yml`).
 
 - The free Google engine is an unofficial endpoint: it may be rate-limited or change. Retries with
   backoff are built in; for production use another engine.
-- Language codes come from Google's list. DeepL supports a subset and some regional variants
-  (e.g. `en-us`) may be needed; unsupported pairs surface as a failed translation.
+- Language codes come from Google's list. For DeepL they're mapped automatically (`en`→`EN-US`,
+  `pt`→`PT-BR`, `zh-CN`→`ZH-HANS`, ...); languages DeepL doesn't offer show a clear message.

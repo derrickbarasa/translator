@@ -65,3 +65,27 @@ def test_google_retries_then_raises(monkeypatch):
     with pytest.raises(RateLimited):
         GoogleFree(retries=2).translate("hi", "auto", "ja")
     assert len(attempts) == 3
+
+
+def test_chunk_prefers_sentence_boundaries():
+    text = "First sentence here. Second sentence here. Third one."
+    chunks = chunk_text(text, 30)
+    assert "".join(chunks) == text
+    assert all(len(c) <= 30 for c in chunks)
+    assert chunks[0] == "First sentence here. "
+    assert all(c.rstrip().endswith((".", "here", "one.")) for c in chunks)
+
+
+def test_chunk_cjk_sentences():
+    text = "今日は天気がいいです。明日は雨でしょう。" * 3
+    chunks = chunk_text(text, 25)
+    assert "".join(chunks) == text
+    assert all(c.endswith("。") for c in chunks)
+
+
+def test_progress_callback_per_chunk(tmp_path):
+    ticks = []
+    text = "a\n\nb\n\nc"
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    translate_text(text, "auto", "ja", Fake(), cache, on_chunk=lambda: ticks.append(1))
+    assert len(ticks) == len(chunk_text(text, Fake.max_chars))

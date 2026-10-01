@@ -3,7 +3,7 @@ import os
 import time
 
 import requests
-from deep_translator import DeeplTranslator, GoogleTranslator
+from deep_translator import GoogleTranslator
 from deep_translator.exceptions import TooManyRequests
 
 CLAUDE_MODEL = "claude-sonnet-5-5"
@@ -64,6 +64,41 @@ class GoogleCloud(Backend):
         return resp.json()["data"]["translations"][0]["translatedText"]
 
 
+class UnsupportedLanguage(Exception):
+    """The chosen engine can't translate to/from this language."""
+
+
+# Google-style code -> DeepL code. Targets need regional variants; sources must not have them.
+DEEPL_TARGET_ALIASES = {
+    "en": "EN-US", "pt": "PT-BR", "zh-CN": "ZH-HANS", "zh-TW": "ZH-HANT", "zh": "ZH-HANS", "no": "NB", "iw": "HE",
+}
+DEEPL_SOURCES = {
+    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hu", "id", "it", "ja", "ko", "lt", "lv", "nb",
+    "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "tr", "uk", "zh", "ar",
+}
+DEEPL_TARGETS = {
+    "BG", "CS", "DA", "DE", "EL", "EN-GB", "EN-US", "ES", "ET", "FI", "FR", "HU", "ID", "IT", "JA", "KO", "LT",
+    "LV", "NB", "NL", "PL", "PT-BR", "PT-PT", "RO", "RU", "SK", "SL", "SV", "TR", "UK", "ZH-HANS", "ZH-HANT", "AR",
+}
+
+
+def deepl_target(code):
+    """Map a Google-style code to DeepL's, or raise UnsupportedLanguage."""
+    mapped = DEEPL_TARGET_ALIASES.get(code, code).upper()
+    if mapped not in DEEPL_TARGETS:
+        raise UnsupportedLanguage(f"DeepL can't translate into '{code}'.")
+    return mapped
+
+
+def deepl_source(code):
+    if code == "auto":
+        return None
+    base = {"no": "nb", "zh-CN": "zh", "zh-TW": "zh"}.get(code, code.split("-")[0]).lower()
+    if base not in DEEPL_SOURCES:
+        raise UnsupportedLanguage(f"DeepL can't translate from '{code}'.")
+    return base.upper()
+
+
 class DeepL(Backend):
     name = "DeepL"
     max_chars = 20000
@@ -75,13 +110,20 @@ class DeepL(Backend):
 
     def translate(self, text, source, target):
         key = os.environ["DEEPL_API_KEY"]
-        translator = DeeplTranslator(
-            api_key=key, source=source, target=target, use_free_api=key.endswith(":fx")
+        host = "api-free.deepl.com" if key.endswith(":fx") else "api.deepl.com"
+        payload = {"text": [text], "target_lang": deepl_target(target)}
+        if source != "auto":
+            payload["source_lang"] = deepl_source(source)
+        resp = requests.post(
+            f"https://{host}/v2/translate",
+            headers={"Authorization": f"DeepL-Auth-Key {key}"},
+            json=payload,
+            timeout=30,
         )
-        try:
-            return translator.translate(text)
-        except TooManyRequests as e:
-            raise RateLimited(str(e)) from e
+        if resp.status_code == 429:
+            raise RateLimited(resp.text)
+        resp.raise_for_status()
+        return resp.json()["translations"][0]["text"]
 
 
 class Claude(Backend):

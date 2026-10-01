@@ -4,8 +4,10 @@ Web UI:  panel serve translator.py --show
 CLI:     python translator.py "I am learning python" --to ja
 """
 import argparse
+import asyncio
 import io
 import json
+import os
 import sys
 
 from deep_translator import GoogleTranslator
@@ -17,8 +19,8 @@ try:
 except ImportError:
     pass
 
-from backends import BACKENDS, RateLimited, get_backend
-from core import detect_language, translate_text
+from backends import BACKENDS, RateLimited, UnsupportedLanguage, get_backend
+from core import chunk_text, detect_language, translate_text
 from files import SUPPORTED, translate_file
 
 FALLBACK_LANGUAGES = {"english": "en", "japanese": "ja", "french": "fr", "spanish": "es", "german": "de"}
@@ -47,6 +49,33 @@ def demo():
 
 
 # ---------------- Panel Interactive Translator ----------------
+async def run_with_progress(work, bar, total):
+    """Run `work(tick)` in a worker thread so the UI stays responsive, mirroring progress on `bar`.
+
+    `total` is the number of expected tick() calls, or None for an indeterminate bar.
+    Widgets are only touched here on the event loop, never from the worker thread.
+    """
+    done = {"n": 0}
+
+    def tick():
+        done["n"] += 1
+
+    if total:
+        bar.max, bar.value = total, 0
+    else:
+        bar.value = -1
+    bar.active, bar.visible = True, True
+    task = asyncio.create_task(asyncio.to_thread(work, tick))
+    try:
+        while not task.done():
+            if total:
+                bar.value = min(done["n"], total)
+            await asyncio.sleep(0.15)
+        return await task
+    finally:
+        bar.visible, bar.active = False, False
+
+
 def build_app():
     import panel as pn
 
@@ -58,21 +87,19 @@ def build_app():
     target_options = {n.title(): c for n, c in languages.items()}
     default_target = "ja" if "ja" in target_options.values() else next(iter(target_options.values()))
 
-    backend_select = pn.widgets.Select(name="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)), width=240)
-    source_lang = pn.widgets.Select(name="Source Language", options=source_options, value="auto", width=220)
+    # ---- settings (sidebar) ----
+    backend_select = pn.widgets.Select(name="Engine", options=list(BACKENDS), value=next(iter(BACKENDS)))
+    live_toggle = pn.widgets.Checkbox(name="Live translate", value=False)
+    annotate_toggle = pn.widgets.Checkbox(name="Reading & notes (Claude only)", value=False)
+
+    # ---- inputs ----
+    source_lang = pn.widgets.Select(name="From", options=source_options, value="auto", width=200)
     swap_btn = pn.widgets.Button(name="⇄", width=50, align="end", description="Swap source and target")
     target_langs = pn.widgets.MultiChoice(
-        name="Target Language(s)", options=target_options, value=[default_target], width=320
+        name="To", options=target_options, value=[default_target], sizing_mode="stretch_width", min_width=200
     )
-    live_toggle = pn.widgets.Checkbox(name="Live translate", value=False)
-    annotate_toggle = pn.widgets.Checkbox(name="Add reading & notes (Claude only)", value=False)
-
     input_text = pn.widgets.TextAreaInput(
-        name="Enter Text to Translate",
-        placeholder="Type or paste text here...",
-        height=150,
-        sizing_mode="stretch_width",
-        max_width=700,
+        name="Text", placeholder="Type or paste text here...", height=260, sizing_mode="stretch_width"
     )
     mic_btn = pn.widgets.Button(name="🎤 Dictate", width=110, description="Speak instead of typing (browser feature)")
     mic_btn.js_on_click(
@@ -90,15 +117,15 @@ def build_app():
     counter = pn.bind(lambda v: f"<small>{len(v):,} characters</small>", input_text.param.value_input)
     translate_btn = pn.widgets.Button(name="Translate", button_type="primary", width=150)
 
-    status = pn.pane.Markdown("", sizing_mode="stretch_width", max_width=700)
-    detected = pn.pane.Markdown("", sizing_mode="stretch_width", max_width=700)
-    results = pn.Tabs(sizing_mode="stretch_width", max_width=700)
-    placeholder = "### Translation will appear here..."
-    status.object = placeholder
+    # ---- outputs ----
+    progress = pn.indicators.Progress(value=0, max=100, visible=False, active=False, sizing_mode="stretch_width")
+    status = pn.pane.Markdown("_Translation will appear here._", sizing_mode="stretch_width")
+    detected = pn.pane.Markdown("", sizing_mode="stretch_width")
+    results = pn.Tabs(sizing_mode="stretch_width")
 
-    state = {"detected_code": None, "token": 0}
+    state = {"detected_code": None, "token": 0, "busy": False, "rerun": False}
     history = []
-    history_box = pn.Column(sizing_mode="stretch_width", max_width=700)
+    history_box = pn.Column(sizing_mode="stretch_width")
 
     # ---- result panels (copy + speak run in the browser) ----
     def result_panel(lang_code, text, note=""):
@@ -126,20 +153,10 @@ def build_app():
         return backend, ok, reason
 
     # ---- main translate action ----
-    def run_translation(text, source, targets, backend):
-        panels = []
-        for code in targets:
-            translated = translate_text(text, source, code, backend)
-            note = ""
-            if annotate_toggle.value and hasattr(backend, "annotate"):
-                try:
-                    note = backend.annotate(text, translated, code)
-                except Exception as e:  # notes are a bonus; never fail the translation over them
-                    print(f"Annotation error: {e}")
-            panels.append((code_to_name.get(code, code), result_panel(code, translated, note), code, translated))
-        return panels
-
-    def do_translate(event=None):
+    async def do_translate(event=None):
+        if state["busy"]:
+            state["rerun"] = True  # text changed mid-flight; translate again once this one finishes
+            return
         text = input_text.value.strip()
         if not text:
             status.object = "⚠️ Please enter text to translate."
@@ -153,29 +170,51 @@ def build_app():
             status.object = f"🔑 {backend.name} isn't configured: {reason} (see README)."
             return
 
+        state["busy"] = True
         translate_btn.disabled = True
         translate_btn.name = "Translating..."
+        source = source_lang.value
+        want_notes = annotate_toggle.value and hasattr(backend, "annotate")
+
+        def work(tick):
+            out = []
+            for code in targets:
+                translated = translate_text(text, source, code, backend, on_chunk=tick)
+                note = ""
+                if want_notes:
+                    try:
+                        note = backend.annotate(text, translated, code)
+                    except Exception as e:  # notes are a bonus; never fail the translation over them
+                        print(f"Annotation error: {e}")
+                out.append((code, translated, note))
+            return out, (detect_language(text) if source == "auto" else None)
+
         try:
-            source = source_lang.value
-            panels = run_translation(text, source, targets, backend)
-            results[:] = [(name, panel) for name, panel, _, _ in panels]
+            total = len(chunk_text(text, backend.max_chars)) * len(targets)
+            out, detected_code = await run_with_progress(work, progress, total)
+            results[:] = [(code_to_name.get(c, c), result_panel(c, t, n)) for c, t, n in out]
             status.object = ""
-            state["detected_code"] = detect_language(text) if source == "auto" else None
-            if state["detected_code"]:
-                det = state["detected_code"]
-                detected.object = f"Detected language: **{code_to_name.get(det, det)}**"
+            state["detected_code"] = detected_code
+            if detected_code:
+                detected.object = f"Detected language: **{code_to_name.get(detected_code, detected_code)}**"
             else:
                 detected.object = ""
-            _, _, code, translated = panels[0]
-            add_history(text, source, targets, translated)
+            add_history(text, source, targets, out[0][1])
         except RateLimited:
             status.object = "⏳ The translation service is rate-limiting requests. Please wait a minute and try again."
+        except UnsupportedLanguage as e:
+            status.object = f"⚠️ {e} Try a different engine or language."
         except Exception as e:
             status.object = f"❌ Translation failed ({type(e).__name__}). Please try again."
             print(f"Translation error: {e}")
         finally:
+            state["busy"] = False
             translate_btn.disabled = False
             translate_btn.name = "Translate"
+        if state["rerun"]:
+            state["rerun"] = False
+            if live_toggle.value:
+                await do_translate()
 
     translate_btn.on_click(do_translate)
 
@@ -203,9 +242,9 @@ def build_app():
         state["token"] += 1
         token = state["token"]
 
-        def fire():
+        async def fire():
             if token == state["token"]:
-                do_translate()
+                await do_translate()
 
         pn.state.add_periodic_callback(fire, period=LIVE_DEBOUNCE_MS, count=1)
 
@@ -226,8 +265,11 @@ def build_app():
         rows = []
         for entry in history:
             label = entry["text"].replace("\n", " ")
-            btn = pn.widgets.Button(name=f"{label[:45]}{'…' if len(label) > 45 else ''}  →  {entry['out'][:30]}",
-                                    button_type="light", sizing_mode="stretch_width")
+            btn = pn.widgets.Button(
+                name=f"{label[:40]}{'…' if len(label) > 40 else ''}  →  {entry['out'][:25]}",
+                button_type="light",
+                sizing_mode="stretch_width",
+            )
             btn.on_click(lambda event, e=entry: restore(e))
             rows.append(btn)
         history_box[:] = rows or [pn.pane.Markdown("_No translations yet._")]
@@ -239,11 +281,13 @@ def build_app():
     # ---- file translation ----
     file_input = pn.widgets.FileInput(accept=",".join(SUPPORTED), multiple=False)
     file_btn = pn.widgets.Button(name="Translate file", button_type="success", width=150)
-    download = pn.widgets.FileDownload(label="Download translated file", button_type="primary",
-                                       disabled=True, auto=False, embed=False, width=220)
-    file_status = pn.pane.Markdown("", sizing_mode="stretch_width", max_width=700)
+    download = pn.widgets.FileDownload(
+        label="Download translated file", button_type="primary", disabled=True, auto=False, embed=False, width=220
+    )
+    file_progress = pn.indicators.Progress(value=-1, visible=False, active=False, sizing_mode="stretch_width")
+    file_status = pn.pane.Markdown("", sizing_mode="stretch_width")
 
-    def do_file(event):
+    async def do_file(event):
         if not file_input.value:
             file_status.object = "⚠️ Choose a .txt, .srt or .docx file first."
             return
@@ -257,17 +301,24 @@ def build_app():
             return
         file_btn.disabled = True
         file_btn.name = "Translating..."
+        source, target = source_lang.value, targets[0]
+        filename, data = file_input.filename, file_input.value
         try:
-            source, target = source_lang.value, targets[0]
-            name, data = translate_file(
-                file_input.filename, file_input.value, lambda s: translate_text(s, source, target, backend)
+            name, out = await run_with_progress(
+                lambda tick: translate_file(
+                    filename, data, lambda s: translate_text(s, source, target, backend, on_chunk=tick)
+                ),
+                file_progress,
+                None,
             )
-            download.file = io.BytesIO(data)
+            download.file = io.BytesIO(out)
             download.filename = name
             download.disabled = False
             file_status.object = f"✅ Done ({code_to_name.get(target, target)}). Use the download button."
         except RateLimited:
             file_status.object = "⏳ Rate-limited. Please wait a minute and try again."
+        except UnsupportedLanguage as e:
+            file_status.object = f"⚠️ {e}"
         except Exception as e:
             file_status.object = f"❌ File translation failed: {e}"
             print(f"File translation error: {e}")
@@ -277,26 +328,43 @@ def build_app():
 
     file_btn.on_click(do_file)
 
-    # ---- layout ----
-    return pn.Column(
-        "## 🌐 Interactive Translator",
-        backend_select,
-        pn.Row(source_lang, swap_btn, target_langs),
-        pn.Row(live_toggle, annotate_toggle),
+    # ---- layout: settings in the sidebar, input and output side by side (wraps on narrow screens) ----
+    input_col = pn.Column(
         input_text,
         pn.Row(mic_btn, pn.pane.HTML(counter, align="center")),
         translate_btn,
-        detected,
-        status,
-        results,
-        pn.layout.Divider(),
-        pn.Accordion(
-            ("History", pn.Column(history_box, clear_history_btn)),
-            ("Translate a file (.txt / .srt / .docx)",
-             pn.Column(file_input, pn.Row(file_btn, download), file_status)),
-            sizing_mode="stretch_width", max_width=700,
-        ),
+        styles={"flex": "1 1 360px", "min-width": "0"},
+    )
+    output_col = pn.Column(
+        progress, status, detected, results, styles={"flex": "1 1 360px", "min-width": "0"}
+    )
+    files_card = pn.Card(
+        file_input,
+        pn.Row(file_btn, download),
+        file_progress,
+        file_status,
+        title="Translate a file (.txt / .srt / .docx)",
+        collapsed=True,
         sizing_mode="stretch_width",
+    )
+    return pn.template.FastListTemplate(
+        title="🌐 Translator",
+        accent="#4a6cf7",
+        sidebar_width=300,
+        sidebar=[
+            backend_select,
+            live_toggle,
+            annotate_toggle,
+            pn.layout.Divider(),
+            pn.pane.Markdown("**History**"),
+            history_box,
+            clear_history_btn,
+        ],
+        main=[
+            pn.Row(source_lang, swap_btn, target_langs, sizing_mode="stretch_width"),
+            pn.FlexBox(input_col, output_col, flex_wrap="wrap", gap="16px", sizing_mode="stretch_width"),
+            files_card,
+        ],
     )
 
 
@@ -329,6 +397,6 @@ def cli(argv=None):
 
 if __name__ == "__main__":
     sys.exit(cli())
-else:
+elif not os.environ.get("TRANSLATOR_NO_AUTOSERVE"):
     # `panel serve translator.py` imports this module; make the app servable.
     build_app().servable()
