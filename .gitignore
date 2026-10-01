@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+.translation_cache.sqlite
+.pytest_cache/
+.ruff_cache/

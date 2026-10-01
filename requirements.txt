@@ -1,2 +1,7 @@
 deep-translator
 panel
+requests
+python-dotenv
+langdetect
+python-docx
+anthropic
