@@ -1,4 +1,4 @@
-# translater
+# translator
 
 A small interactive text translator built with [Panel](https://panel.holoviz.org/) and
 [deep-translator](https://github.com/nidhaloff/deep-translator).
@@ -14,13 +14,13 @@ pip install -r requirements.txt
 Web UI:
 
 ```
-panel serve translater.py --show
+panel serve translator.py --show
 ```
 
 Terminal demo (prints three sample translations):
 
 ```
-python translater.py
+python translator.py
 ```
 
 ## Notes
