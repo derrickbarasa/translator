@@ -129,7 +129,7 @@ app = pn.Column(
     sizing_mode="stretch_width",
 )
 
-# Make servable for Panel (run with: panel serve translater.py)
+# Make servable for Panel (run with: panel serve translator.py)
 app.servable()
 
 if __name__ == "__main__":
