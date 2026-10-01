@@ -32,6 +32,30 @@ Docker:
 docker build -t translator . && docker run -p 5006:5006 --env-file .env translator
 ```
 
+## Choosing an engine
+
+You don't need any key to use the app: **Google (free)** and **MyMemory** work out of the box. The others are
+optional and are enabled by putting a key in `.env` (copy `.env.example` first). Pick the engine in the sidebar,
+or with `--engine` on the command line.
+
+| Engine | Key needed | Cost | Notes |
+| --- | --- | --- | --- |
+| Google (free, unofficial) | none | free | Default. Unofficial endpoint, so it may rate-limit your IP or change. |
+| MyMemory | none (optional `MYMEMORY_EMAIL`) | free | Fallback with noticeably lower quality, especially on short phrases. About 5,000 characters a day anonymously; setting your email raises that. |
+| DeepL | `DEEPL_API_KEY` | Free plan with a monthly allowance, paid plans above it | Best quality of the free options. Keys ending in `:fx` use the free endpoint automatically. Sign-up may ask for a payment card for verification. |
+| Google Cloud Translation | `GOOGLE_API_KEY` | Free monthly allowance, then paid | Needs a Google Cloud project with billing enabled. |
+| Claude | `ANTHROPIC_API_KEY` (optional `CLAUDE_MODEL`) | Pay as you go | Context-aware translation, plus reading and nuance notes, tone and glossary. |
+
+Prices, free allowances and sign-up requirements are set by each provider and change; check their pricing page
+before relying on them.
+
+**If the free engine says it is rate-limiting you:** wait a minute, switch to MyMemory in the sidebar, or try
+another network. Results are cached, so repeated text never costs another request.
+
+**Trying an engine safely:** set only the key you want in `.env`, restart the server, pick the engine and translate
+a short sentence first. Errors for a rejected key, a used-up quota or a network problem each show their own
+message in the app and on the command line.
+
 ## Features
 
 - **Engines:** Google (free, no key), MyMemory (free, no key, lower quality; optional `MYMEMORY_EMAIL` raises the
