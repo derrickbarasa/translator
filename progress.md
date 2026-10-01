@@ -4,7 +4,7 @@ Running log of what has been built, what was verified, and what is left.
 
 ## Status (2026-10-01)
 
-Working app on `main`. 58 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
+Working app on `main`. 67 tests pass, `ruff` is clean. Verified in a real browser: layout, async flow, progress
 bar, rate-limit message. **Not verified:** the Ctrl+Enter key listener in a real browser (the Python side is tested); a successful translation render (Google rate-limited the dev
 machine's IP) and the Claude / DeepL / Google Cloud engines against their real APIs (mocked tests only).
 
@@ -28,7 +28,7 @@ shared `RateLimited` error, or `BadCredentials` / `QuotaExceeded` / `NetworkErro
 **Core** (`core.py`): parallel chunk translation (ordered, per-engine worker count); chunking by line, then sentence (incl. CJK punctuation), then word, then hard cut, with
 lossless round-trip. SQLite cache that survives restarts (LRU cap, clear button in the sidebar, Claude model in the key, Claude notes cached). Per-chunk progress callback. Language detection.
 
-**Files** (`files.py`): `.txt`, `.srt` (cue numbers and timestamps preserved), `.docx` (inline formatting kept, paragraphs translated concurrently).
+**Files** (`files.py`): `.txt`, `.srt` (cue numbers and timestamps preserved), `.docx` (inline formatting kept, paragraphs translated concurrently), `.pdf` (text extraction via pypdf, returned as `.txt`).
 
 **UI** (`translator.py`): sidebar settings and history; side-by-side input and output that wraps on narrow
 screens; dark-mode toggle; non-blocking translation with progress bar; multiple targets as tabs; swap;
@@ -41,6 +41,8 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Known limitations
 
+- PDF input extracts text only: layout, tables and images are lost, scanned PDFs are rejected (no OCR), and the reflow
+  heuristic can mis-join lines in multi-column documents. Output is a `.txt`.
 - Anki export covers the first target of each history entry only (history stores one output). The download button is
   untested in a browser.
 - Google's free endpoint is unofficial and currently rejects requests from the dev machine; the app shows the
@@ -58,7 +60,7 @@ detected language; live translate (debounced, re-runs if text changed mid-flight
 
 ## Next up
 
-1. Usage and cost tracking; PDF input.
+1. Usage and cost tracking.
 2. Rename `Button(name=...)` to `label`.
 
 ## Notes for contributors

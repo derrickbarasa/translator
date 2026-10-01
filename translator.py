@@ -391,7 +391,7 @@ def build_app():
 
     async def do_file(event):
         if not file_input.value:
-            file_status.object = "⚠️ Choose a .txt, .srt or .docx file first."
+            file_status.object = "⚠️ Choose a .txt, .srt, .docx or .pdf file first."
             return
         targets = list(target_langs.value)
         if not targets:
@@ -450,7 +450,7 @@ def build_app():
         pn.Row(file_btn, download),
         file_progress,
         file_status,
-        title="Translate a file (.txt / .srt / .docx)",
+        title="Translate a file (.txt / .srt / .docx / .pdf)",
         collapsed=True,
         sizing_mode="stretch_width",
     )

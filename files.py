@@ -1,9 +1,9 @@
-"""Translate uploaded .txt, .srt and .docx files, returning bytes to download."""
+"""Translate uploaded .txt, .srt, .docx and .pdf files, returning bytes to download."""
 import io
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-SUPPORTED = (".txt", ".srt", ".docx")
+SUPPORTED = (".txt", ".srt", ".docx", ".pdf")
 
 _TIMING = re.compile(r"^\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->")
 
@@ -105,6 +105,34 @@ def translate_docx(data, translate, workers=1):
     return buf.getvalue()
 
 
+def reflow(text):
+    """Undo the hard line wraps PDF extraction leaves inside paragraphs.
+
+    Joins a line to the next when the next starts in lowercase (or the line ends in a hyphenated
+    break), keeping blank lines as paragraph breaks.
+    """
+    text = re.sub(r"(\w)-\n(?=[a-z])", r"\1", text)
+    return re.sub(r"(?<=[^\n.!?:])\n(?=[a-z])", " ", text)
+
+
+def extract_pdf_text(data):
+    """Text of every page, pages separated by a blank line. Raises ValueError for scanned PDFs."""
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted:
+            raise ValueError("This PDF is password-protected.")
+        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+    except PdfReadError as e:
+        raise ValueError("Couldn't read this PDF; the file may be damaged.") from e
+    text = "\n\n".join(p for p in pages if p)
+    if not text:
+        raise ValueError("No text found in this PDF. It may be a scan; OCR it first.")
+    return reflow(text)
+
+
 def translate_file(filename, data, translate, workers=1):
     """Return (new_filename, bytes). `translate` maps str -> str.
 
@@ -117,6 +145,9 @@ def translate_file(filename, data, translate, workers=1):
         return f"{stem}.translated.docx", translate_docx(data, translate, workers)
     if name.endswith(".srt"):
         return f"{stem}.translated.srt", translate_srt(_decode(data), translate).encode("utf-8")
+    if name.endswith(".pdf"):
+        # PDF layout can't be rebuilt, so the translated text comes back as a .txt file.
+        return f"{stem}.translated.txt", translate(extract_pdf_text(data)).encode("utf-8")
     if name.endswith(".txt"):
         return f"{stem}.translated.txt", translate(_decode(data)).encode("utf-8")
     raise ValueError(f"Unsupported file type. Use one of: {', '.join(SUPPORTED)}")
